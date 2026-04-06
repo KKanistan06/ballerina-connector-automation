@@ -1,0 +1,1832 @@
+{
+  "sdkInfo": {
+    "name": "Admin SDK",
+    "version": "unknown",
+    "rootClientClass": "org.apache.kafka.clients.admin.Admin"
+  },
+  "clientInit": {
+    "patternName": "static-factory",
+    "initializationCode": "Admin client = Admin.create();",
+    "explanation": "Admin is an interface with static create() factory methods and no public constructors, following the standard Kafka client pattern where the static factory methods return an implementation instance (typically KafkaAdminClient) while keeping the implementation details hidden from users.",
+    "detectedBy": "llm",
+    "builderClass": null,
+    "connectionFields": [],
+    "syntheticTypeMetadata": []
+  },
+  "rootClient": {
+    "className": "org.apache.kafka.clients.admin.Admin",
+    "packageName": "org.apache.kafka.clients.admin",
+    "simpleName": "Admin",
+    "isInterface": true,
+    "constructors": [],
+    "methods": [
+      {
+        "name": "createTopics",
+        "parameters": [
+          {
+            "name": "collection",
+            "typeName": "java.util.Collection",
+            "requestFields": []
+          },
+          {
+            "name": "createTopicsOptions",
+            "typeName": "org.apache.kafka.clients.admin.CreateTopicsOptions",
+            "requestFields": [
+              {
+                "name": "shouldValidateOnly",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "shouldRetryOnQuotaViolation",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.CreateTopicsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "createTopics",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Creates new topics in the Kafka cluster with specified configurations and options."
+      },
+      {
+        "name": "deleteTopics",
+        "parameters": [
+          {
+            "name": "topicCollection",
+            "typeName": "org.apache.kafka.common.TopicCollection",
+            "requestFields": []
+          },
+          {
+            "name": "deleteTopicsOptions",
+            "typeName": "org.apache.kafka.clients.admin.DeleteTopicsOptions",
+            "requestFields": [
+              {
+                "name": "shouldRetryOnQuotaViolation",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DeleteTopicsResult",
+        "returnFields": [
+          {
+            "name": "topicIdValues",
+            "typeName": "Map",
+            "fullType": "java.util.Map<org.apache.kafka.common.Uuid, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "topicNameValues",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "deleteTopics",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Deletes specified topics from the Kafka cluster permanently."
+      },
+      {
+        "name": "listTopics",
+        "parameters": [
+          {
+            "name": "listTopicsOptions",
+            "typeName": "org.apache.kafka.clients.admin.ListTopicsOptions",
+            "requestFields": [
+              {
+                "name": "shouldListInternal",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.ListTopicsResult",
+        "returnFields": [
+          {
+            "name": "namesToListings",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.String, org.apache.kafka.clients.admin.TopicListing>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "listings",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Collection<org.apache.kafka.clients.admin.TopicListing>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "names",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Set<java.lang.String>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "listTopics",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Lists all available topics in the Kafka cluster with optional filtering."
+      },
+      {
+        "name": "describeTopics",
+        "parameters": [
+          {
+            "name": "topicCollection",
+            "typeName": "org.apache.kafka.common.TopicCollection",
+            "requestFields": []
+          },
+          {
+            "name": "describeTopicsOptions",
+            "typeName": "org.apache.kafka.clients.admin.DescribeTopicsOptions",
+            "requestFields": [
+              {
+                "name": "includeAuthorizedOperations",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "partitionSizeLimitPerResponse",
+                "typeName": "int",
+                "fullType": "int",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeTopicsResult",
+        "returnFields": [
+          {
+            "name": "topicIdValues",
+            "typeName": "Map",
+            "fullType": "java.util.Map<org.apache.kafka.common.Uuid, org.apache.kafka.common.KafkaFuture<org.apache.kafka.clients.admin.TopicDescription>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "topicNameValues",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, org.apache.kafka.common.KafkaFuture<org.apache.kafka.clients.admin.TopicDescription>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, org.apache.kafka.common.KafkaFuture<org.apache.kafka.clients.admin.TopicDescription>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.String, org.apache.kafka.clients.admin.TopicDescription>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "allTopicNames",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.String, org.apache.kafka.clients.admin.TopicDescription>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "allTopicIds",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<org.apache.kafka.common.Uuid, org.apache.kafka.clients.admin.TopicDescription>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "describeTopics",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves detailed information about specified topics including partitions, replicas, and configurations."
+      },
+      {
+        "name": "describeCluster",
+        "parameters": [
+          {
+            "name": "describeClusterOptions",
+            "typeName": "org.apache.kafka.clients.admin.DescribeClusterOptions",
+            "requestFields": [
+              {
+                "name": "includeAuthorizedOperations",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeClusterResult",
+        "returnFields": [
+          {
+            "name": "nodes",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Collection<org.apache.kafka.common.Node>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "controller",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<org.apache.kafka.common.Node>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "clusterId",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.String>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "authorizedOperations",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Set<org.apache.kafka.common.acl.AclOperation>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "describeCluster",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves information about the Kafka cluster including broker details and controller information."
+      },
+      {
+        "name": "describeAcls",
+        "parameters": [
+          {
+            "name": "aclBindingFilter",
+            "typeName": "org.apache.kafka.common.acl.AclBindingFilter",
+            "requestFields": [
+              {
+                "name": "isUnknown",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "patternFilter",
+                "typeName": "ResourcePatternFilter",
+                "fullType": "org.apache.kafka.common.resource.ResourcePatternFilter",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "entryFilter",
+                "typeName": "AccessControlEntryFilter",
+                "fullType": "org.apache.kafka.common.acl.AccessControlEntryFilter",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "matchesAtMostOne",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "findIndefiniteField",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "describeAclsOptions",
+            "typeName": "org.apache.kafka.clients.admin.DescribeAclsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeAclsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Collection<org.apache.kafka.common.acl.AclBinding>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "describeAcls",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves access control lists (ACLs) that match the specified filter criteria."
+      },
+      {
+        "name": "createAcls",
+        "parameters": [
+          {
+            "name": "collection",
+            "typeName": "java.util.Collection",
+            "requestFields": []
+          },
+          {
+            "name": "createAclsOptions",
+            "typeName": "org.apache.kafka.clients.admin.CreateAclsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.CreateAclsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<org.apache.kafka.common.acl.AclBinding, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "createAcls",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Creates new access control lists (ACLs) to manage permissions for Kafka resources."
+      },
+      {
+        "name": "deleteAcls",
+        "parameters": [
+          {
+            "name": "collection",
+            "typeName": "java.util.Collection",
+            "requestFields": []
+          },
+          {
+            "name": "deleteAclsOptions",
+            "typeName": "org.apache.kafka.clients.admin.DeleteAclsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DeleteAclsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<org.apache.kafka.common.acl.AclBindingFilter, org.apache.kafka.common.KafkaFuture<org.apache.kafka.clients.admin.DeleteAclsResult$FilterResults>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Collection<org.apache.kafka.common.acl.AclBinding>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "deleteAcls",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Deletes access control lists (ACLs) that match the specified filter patterns."
+      },
+      {
+        "name": "describeConfigs",
+        "parameters": [
+          {
+            "name": "collection",
+            "typeName": "java.util.Collection",
+            "requestFields": []
+          },
+          {
+            "name": "describeConfigsOptions",
+            "typeName": "org.apache.kafka.clients.admin.DescribeConfigsOptions",
+            "requestFields": [
+              {
+                "name": "includeSynonyms",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "includeDocumentation",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeConfigsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<org.apache.kafka.common.config.ConfigResource, org.apache.kafka.common.KafkaFuture<org.apache.kafka.clients.admin.Config>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<org.apache.kafka.common.config.ConfigResource, org.apache.kafka.clients.admin.Config>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "describeConfigs",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves configuration settings for specified Kafka resources like topics or brokers."
+      },
+      {
+        "name": "alterConfigs",
+        "parameters": [
+          {
+            "name": "map",
+            "typeName": "java.util.Map",
+            "requestFields": []
+          },
+          {
+            "name": "alterConfigsOptions",
+            "typeName": "org.apache.kafka.clients.admin.AlterConfigsOptions",
+            "requestFields": [
+              {
+                "name": "shouldValidateOnly",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.AlterConfigsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<org.apache.kafka.common.config.ConfigResource, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "alterConfigs",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Modifies configuration settings for specified Kafka resources by replacing entire configurations."
+      },
+      {
+        "name": "incrementalAlterConfigs",
+        "parameters": [
+          {
+            "name": "map",
+            "typeName": "java.util.Map",
+            "requestFields": []
+          },
+          {
+            "name": "alterConfigsOptions",
+            "typeName": "org.apache.kafka.clients.admin.AlterConfigsOptions",
+            "requestFields": [
+              {
+                "name": "shouldValidateOnly",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.AlterConfigsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<org.apache.kafka.common.config.ConfigResource, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "incrementalAlterConfigs",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Modifies configuration settings for specified Kafka resources by applying incremental changes."
+      },
+      {
+        "name": "describeLogDirs",
+        "parameters": [
+          {
+            "name": "collection",
+            "typeName": "java.util.Collection",
+            "requestFields": []
+          },
+          {
+            "name": "describeLogDirsOptions",
+            "typeName": "org.apache.kafka.clients.admin.DescribeLogDirsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeLogDirsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.Integer, org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.String, org.apache.kafka.common.requests.DescribeLogDirsResponse$LogDirInfo>>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "descriptions",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.Integer, org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.String, org.apache.kafka.clients.admin.LogDirDescription>>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.Integer, java.util.Map<java.lang.String, org.apache.kafka.common.requests.DescribeLogDirsResponse$LogDirInfo>>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "allDescriptions",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.Integer, java.util.Map<java.lang.String, org.apache.kafka.clients.admin.LogDirDescription>>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "describeLogDirs",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves information about log directories on specified brokers including size and partition details."
+      },
+      {
+        "name": "createPartitions",
+        "parameters": [
+          {
+            "name": "map",
+            "typeName": "java.util.Map",
+            "requestFields": []
+          },
+          {
+            "name": "createPartitionsOptions",
+            "typeName": "org.apache.kafka.clients.admin.CreatePartitionsOptions",
+            "requestFields": [
+              {
+                "name": "validateOnly",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "shouldRetryOnQuotaViolation",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.CreatePartitionsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "createPartitions",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Increases the number of partitions for specified topics."
+      },
+      {
+        "name": "deleteRecords",
+        "parameters": [
+          {
+            "name": "map",
+            "typeName": "java.util.Map",
+            "requestFields": []
+          },
+          {
+            "name": "deleteRecordsOptions",
+            "typeName": "org.apache.kafka.clients.admin.DeleteRecordsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DeleteRecordsResult",
+        "returnFields": [
+          {
+            "name": "lowWatermarks",
+            "typeName": "Map",
+            "fullType": "java.util.Map<org.apache.kafka.common.TopicPartition, org.apache.kafka.common.KafkaFuture<org.apache.kafka.clients.admin.DeletedRecords>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "deleteRecords",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Deletes records from specified topic partitions before a given offset."
+      },
+      {
+        "name": "describeConsumerGroups",
+        "parameters": [
+          {
+            "name": "collection",
+            "typeName": "java.util.Collection",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeConsumerGroupsResult",
+        "returnFields": [
+          {
+            "name": "describedGroups",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, org.apache.kafka.common.KafkaFuture<org.apache.kafka.clients.admin.ConsumerGroupDescription>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.String, org.apache.kafka.clients.admin.ConsumerGroupDescription>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "describeConsumerGroups",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves detailed information about specified consumer groups including members and their assignments."
+      },
+      {
+        "name": "listConsumerGroups",
+        "parameters": [],
+        "returnType": "org.apache.kafka.clients.admin.ListConsumerGroupsResult",
+        "returnFields": [
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Collection<org.apache.kafka.clients.admin.ConsumerGroupListing>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "valid",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Collection<org.apache.kafka.clients.admin.ConsumerGroupListing>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "errors",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Collection<java.lang.Throwable>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "listConsumerGroups",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Lists all consumer groups in the Kafka cluster."
+      },
+      {
+        "name": "listConsumerGroupOffsets",
+        "parameters": [
+          {
+            "name": "map",
+            "typeName": "java.util.Map",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.ListConsumerGroupOffsetsResult",
+        "returnFields": [
+          {
+            "name": "partitionsToOffsetAndMetadata",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<org.apache.kafka.common.TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.String, java.util.Map<org.apache.kafka.common.TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata>>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "listConsumerGroupOffsets",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves the committed offsets for specified consumer groups and topic partitions."
+      },
+      {
+        "name": "deleteConsumerGroups",
+        "parameters": [
+          {
+            "name": "collection",
+            "typeName": "java.util.Collection",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DeleteConsumerGroupsResult",
+        "returnFields": [
+          {
+            "name": "deletedGroups",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "deleteConsumerGroups",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Deletes specified consumer groups from the Kafka cluster."
+      },
+      {
+        "name": "deleteConsumerGroupOffsets",
+        "parameters": [
+          {
+            "name": "string",
+            "typeName": "java.lang.String",
+            "requestFields": []
+          },
+          {
+            "name": "set",
+            "typeName": "java.util.Set",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DeleteConsumerGroupOffsetsResult",
+        "returnFields": [
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "deleteConsumerGroupOffsets",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Deletes committed offsets for specific topic partitions within a consumer group."
+      },
+      {
+        "name": "alterConsumerGroupOffsets",
+        "parameters": [
+          {
+            "name": "string",
+            "typeName": "java.lang.String",
+            "requestFields": []
+          },
+          {
+            "name": "map",
+            "typeName": "java.util.Map",
+            "requestFields": []
+          },
+          {
+            "name": "alterConsumerGroupOffsetsOptions",
+            "typeName": "org.apache.kafka.clients.admin.AlterConsumerGroupOffsetsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.AlterConsumerGroupOffsetsResult",
+        "returnFields": [
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "alterConsumerGroupOffsets",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Modifies the committed offsets for specific topic partitions within a consumer group."
+      },
+      {
+        "name": "listOffsets",
+        "parameters": [
+          {
+            "name": "map",
+            "typeName": "java.util.Map",
+            "requestFields": []
+          },
+          {
+            "name": "listOffsetsOptions",
+            "typeName": "org.apache.kafka.clients.admin.ListOffsetsOptions",
+            "requestFields": [
+              {
+                "name": "isolationLevel",
+                "typeName": "IsolationLevel",
+                "fullType": "org.apache.kafka.common.IsolationLevel",
+                "isRequired": false,
+                "enumReference": "org.apache.kafka.common.IsolationLevel",
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.ListOffsetsResult",
+        "returnFields": [
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<org.apache.kafka.common.TopicPartition, org.apache.kafka.clients.admin.ListOffsetsResult$ListOffsetsResultInfo>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "listOffsets",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves the earliest or latest offsets for specified topic partitions based on timestamp."
+      },
+      {
+        "name": "describeClientQuotas",
+        "parameters": [
+          {
+            "name": "clientQuotaFilter",
+            "typeName": "org.apache.kafka.common.quota.ClientQuotaFilter",
+            "requestFields": [
+              {
+                "name": "all",
+                "typeName": "ClientQuotaFilter",
+                "fullType": "org.apache.kafka.common.quota.ClientQuotaFilter",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "components",
+                "typeName": "Collection",
+                "fullType": "java.util.Collection<org.apache.kafka.common.quota.ClientQuotaFilterComponent>",
+                "isRequired": false,
+                "memberReference": "org.apache.kafka.common.quota.ClientQuotaFilterComponent",
+                "description": null
+              },
+              {
+                "name": "strict",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "describeClientQuotasOptions",
+            "typeName": "org.apache.kafka.clients.admin.DescribeClientQuotasOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeClientQuotasResult",
+        "returnFields": [
+          {
+            "name": "entities",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<org.apache.kafka.common.quota.ClientQuotaEntity, java.util.Map<java.lang.String, java.lang.Double>>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "describeClientQuotas",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves quota configurations for clients matching the specified filter."
+      },
+      {
+        "name": "alterClientQuotas",
+        "parameters": [
+          {
+            "name": "collection",
+            "typeName": "java.util.Collection",
+            "requestFields": []
+          },
+          {
+            "name": "alterClientQuotasOptions",
+            "typeName": "org.apache.kafka.clients.admin.AlterClientQuotasOptions",
+            "requestFields": [
+              {
+                "name": "validateOnly",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.AlterClientQuotasResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<org.apache.kafka.common.quota.ClientQuotaEntity, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "alterClientQuotas",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Modifies quota configurations for specified clients to control resource usage."
+      },
+      {
+        "name": "describeUserScramCredentials",
+        "parameters": [
+          {
+            "name": "list",
+            "typeName": "java.util.List",
+            "requestFields": []
+          },
+          {
+            "name": "describeUserScramCredentialsOptions",
+            "typeName": "org.apache.kafka.clients.admin.DescribeUserScramCredentialsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeUserScramCredentialsResult",
+        "returnFields": [
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.String, org.apache.kafka.clients.admin.UserScramCredentialsDescription>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "users",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.List<java.lang.String>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "describeUserScramCredentials",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves SCRAM authentication credentials information for specified users."
+      },
+      {
+        "name": "alterUserScramCredentials",
+        "parameters": [
+          {
+            "name": "list",
+            "typeName": "java.util.List",
+            "requestFields": []
+          },
+          {
+            "name": "alterUserScramCredentialsOptions",
+            "typeName": "org.apache.kafka.clients.admin.AlterUserScramCredentialsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.AlterUserScramCredentialsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "alterUserScramCredentials",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Modifies SCRAM authentication credentials for specified users."
+      },
+      {
+        "name": "describeFeatures",
+        "parameters": [
+          {
+            "name": "describeFeaturesOptions",
+            "typeName": "org.apache.kafka.clients.admin.DescribeFeaturesOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeFeaturesResult",
+        "returnFields": [
+          {
+            "name": "featureMetadata",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<org.apache.kafka.clients.admin.FeatureMetadata>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "describeFeatures",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves information about supported and finalized features in the Kafka cluster."
+      },
+      {
+        "name": "updateFeatures",
+        "parameters": [
+          {
+            "name": "map",
+            "typeName": "java.util.Map",
+            "requestFields": []
+          },
+          {
+            "name": "updateFeaturesOptions",
+            "typeName": "org.apache.kafka.clients.admin.UpdateFeaturesOptions",
+            "requestFields": [
+              {
+                "name": "dryRun",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "validateOnly",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.UpdateFeaturesResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "updateFeatures",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Updates the feature levels for specified features in the Kafka cluster."
+      },
+      {
+        "name": "describeProducers",
+        "parameters": [
+          {
+            "name": "collection",
+            "typeName": "java.util.Collection",
+            "requestFields": []
+          },
+          {
+            "name": "describeProducersOptions",
+            "typeName": "org.apache.kafka.clients.admin.DescribeProducersOptions",
+            "requestFields": [
+              {
+                "name": "brokerId",
+                "typeName": "OptionalInt",
+                "fullType": "java.util.OptionalInt",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeProducersResult",
+        "returnFields": [
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<org.apache.kafka.common.TopicPartition, org.apache.kafka.clients.admin.DescribeProducersResult$PartitionProducerState>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "describeProducers",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves information about active producers for specified topic partitions."
+      },
+      {
+        "name": "describeTransactions",
+        "parameters": [
+          {
+            "name": "collection",
+            "typeName": "java.util.Collection",
+            "requestFields": []
+          },
+          {
+            "name": "describeTransactionsOptions",
+            "typeName": "org.apache.kafka.clients.admin.DescribeTransactionsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.DescribeTransactionsResult",
+        "returnFields": [
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.String, org.apache.kafka.clients.admin.TransactionDescription>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "describeTransactions",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves detailed information about specified transactions including their state and metadata."
+      },
+      {
+        "name": "abortTransaction",
+        "parameters": [
+          {
+            "name": "abortTransactionSpec",
+            "typeName": "org.apache.kafka.clients.admin.AbortTransactionSpec",
+            "requestFields": [
+              {
+                "name": "topicPartition",
+                "typeName": "TopicPartition",
+                "fullType": "org.apache.kafka.common.TopicPartition",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "producerId",
+                "typeName": "long",
+                "fullType": "long",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "producerEpoch",
+                "typeName": "short",
+                "fullType": "short",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "coordinatorEpoch",
+                "typeName": "int",
+                "fullType": "int",
+                "isRequired": true,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "abortTransactionOptions",
+            "typeName": "org.apache.kafka.clients.admin.AbortTransactionOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.AbortTransactionResult",
+        "returnFields": [
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "abortTransaction",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Forcefully aborts a hanging transaction on a specific topic partition."
+      },
+      {
+        "name": "listTransactions",
+        "parameters": [
+          {
+            "name": "listTransactionsOptions",
+            "typeName": "org.apache.kafka.clients.admin.ListTransactionsOptions",
+            "requestFields": [
+              {
+                "name": "filteredStates",
+                "typeName": "Set",
+                "fullType": "java.util.Set<org.apache.kafka.clients.admin.TransactionState>",
+                "isRequired": false,
+                "memberReference": "org.apache.kafka.clients.admin.TransactionState",
+                "description": null
+              },
+              {
+                "name": "filteredProducerIds",
+                "typeName": "Set",
+                "fullType": "java.util.Set<java.lang.Long>",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "filteredDuration",
+                "typeName": "long",
+                "fullType": "long",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.ListTransactionsResult",
+        "returnFields": [
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Collection<org.apache.kafka.clients.admin.TransactionListing>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "byBrokerId",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.Integer, org.apache.kafka.common.KafkaFuture<java.util.Collection<org.apache.kafka.clients.admin.TransactionListing>>>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "allByBrokerId",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<java.lang.Integer, java.util.Collection<org.apache.kafka.clients.admin.TransactionListing>>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "listTransactions",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Lists all active transactions in the Kafka cluster with optional filtering."
+      },
+      {
+        "name": "electLeaders",
+        "parameters": [
+          {
+            "name": "electionType",
+            "typeName": "org.apache.kafka.common.ElectionType",
+            "requestFields": [
+              {
+                "name": "values",
+                "typeName": "ElectionType[]",
+                "fullType": "org.apache.kafka.common.ElectionType[]",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "set",
+            "typeName": "java.util.Set",
+            "requestFields": []
+          },
+          {
+            "name": "electLeadersOptions",
+            "typeName": "org.apache.kafka.clients.admin.ElectLeadersOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.ElectLeadersResult",
+        "returnFields": [
+          {
+            "name": "partitions",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<org.apache.kafka.common.TopicPartition, java.util.Optional<java.lang.Throwable>>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "electLeaders",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Triggers preferred or unclean leader election for specified topic partitions."
+      },
+      {
+        "name": "alterPartitionReassignments",
+        "parameters": [
+          {
+            "name": "map",
+            "typeName": "java.util.Map",
+            "requestFields": []
+          },
+          {
+            "name": "alterPartitionReassignmentsOptions",
+            "typeName": "org.apache.kafka.clients.admin.AlterPartitionReassignmentsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.AlterPartitionReassignmentsResult",
+        "returnFields": [
+          {
+            "name": "values",
+            "typeName": "Map",
+            "fullType": "java.util.Map<org.apache.kafka.common.TopicPartition, org.apache.kafka.common.KafkaFuture<java.lang.Void>>",
+            "isRequired": false,
+            "description": null
+          },
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "alterPartitionReassignments",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Modifies the replica assignment for specified topic partitions to rebalance data."
+      },
+      {
+        "name": "listPartitionReassignments",
+        "parameters": [
+          {
+            "name": "optional",
+            "typeName": "java.util.Optional",
+            "requestFields": []
+          },
+          {
+            "name": "listPartitionReassignmentsOptions",
+            "typeName": "org.apache.kafka.clients.admin.ListPartitionReassignmentsOptions",
+            "requestFields": []
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.ListPartitionReassignmentsResult",
+        "returnFields": [
+          {
+            "name": "reassignments",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.util.Map<org.apache.kafka.common.TopicPartition, org.apache.kafka.clients.admin.PartitionReassignment>>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "listPartitionReassignments",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves information about ongoing partition reassignments for specified topics."
+      },
+      {
+        "name": "removeMembersFromConsumerGroup",
+        "parameters": [
+          {
+            "name": "string",
+            "typeName": "java.lang.String",
+            "requestFields": []
+          },
+          {
+            "name": "removeMembersFromConsumerGroupOptions",
+            "typeName": "org.apache.kafka.clients.admin.RemoveMembersFromConsumerGroupOptions",
+            "requestFields": [
+              {
+                "name": "members",
+                "typeName": "Set",
+                "fullType": "java.util.Set<org.apache.kafka.clients.admin.MemberToRemove>",
+                "isRequired": false,
+                "memberReference": "org.apache.kafka.clients.admin.MemberToRemove",
+                "description": null
+              },
+              {
+                "name": "reason",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "removeAll",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "org.apache.kafka.clients.admin.RemoveMembersFromConsumerGroupResult",
+        "returnFields": [
+          {
+            "name": "all",
+            "typeName": "KafkaFuture",
+            "fullType": "org.apache.kafka.common.KafkaFuture<java.lang.Void>",
+            "isRequired": false,
+            "description": null
+          }
+        ],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "removeMembersFromConsumerGroup",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Removes specified members from a consumer group to force rebalancing."
+      }
+    ]
+  },
+  "memberClasses": {
+    "org.apache.kafka.common.quota.ClientQuotaFilterComponent": {
+      "simpleName": "ClientQuotaFilterComponent",
+      "packageName": "org.apache.kafka.common.quota",
+      "fields": [
+        {
+          "name": "entityType",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "match",
+          "typeName": "Optional",
+          "fullType": "java.util.Optional<java.lang.String>",
+          "isRequired": false,
+          "description": null
+        }
+      ]
+    },
+    "org.apache.kafka.clients.admin.TransactionState": {
+      "simpleName": "TransactionState",
+      "packageName": "org.apache.kafka.clients.admin",
+      "fields": [
+        {
+          "name": "ONGOING",
+          "typeName": "TransactionState",
+          "fullType": "org.apache.kafka.clients.admin.TransactionState",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "PREPARE_ABORT",
+          "typeName": "TransactionState",
+          "fullType": "org.apache.kafka.clients.admin.TransactionState",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "PREPARE_COMMIT",
+          "typeName": "TransactionState",
+          "fullType": "org.apache.kafka.clients.admin.TransactionState",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "COMPLETE_ABORT",
+          "typeName": "TransactionState",
+          "fullType": "org.apache.kafka.clients.admin.TransactionState",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "COMPLETE_COMMIT",
+          "typeName": "TransactionState",
+          "fullType": "org.apache.kafka.clients.admin.TransactionState",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "EMPTY",
+          "typeName": "TransactionState",
+          "fullType": "org.apache.kafka.clients.admin.TransactionState",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "PREPARE_EPOCH_FENCE",
+          "typeName": "TransactionState",
+          "fullType": "org.apache.kafka.clients.admin.TransactionState",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "UNKNOWN",
+          "typeName": "TransactionState",
+          "fullType": "org.apache.kafka.clients.admin.TransactionState",
+          "isRequired": false,
+          "description": null
+        }
+      ]
+    },
+    "org.apache.kafka.clients.admin.MemberToRemove": {
+      "simpleName": "MemberToRemove",
+      "packageName": "org.apache.kafka.clients.admin",
+      "fields": [
+        {
+          "name": "groupInstanceId",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": null
+        }
+      ]
+    }
+  },
+  "enums": {
+    "org.apache.kafka.common.IsolationLevel": {
+      "simpleName": "IsolationLevel",
+      "values": [
+        "READ_UNCOMMITTED - default",
+        "READ_COMMITTED"
+      ]
+    }
+  },
+  "analysis": {
+    "totalClassesFound": 1814,
+    "totalMethodsInClient": 108,
+    "selectedMethods": 35,
+    "analysisApproach": "JavaParser with LLM enhancement"
+  }
+}

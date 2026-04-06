@@ -1,0 +1,24 @@
+[package]
+org = "wso2"
+name = "connector_automation"
+version = "0.1.0"
+distribution = "2201.13.1"
+
+[dependencies]
+"ballerina/http" = "2.15.4"
+"ballerina/log" = "2.17.0"
+"ballerina/regex" = "1.4.1"
+"ballerina/time" = "2.4.1"
+"ballerina/file" = "1.12.0"
+"ballerina/io" = "1.8.0"
+"ballerina/os" = "1.9.0"
+"ballerina/jballerina.java" = "0.0.0"
+
+[build-options]
+observabilityIncluded = true
+
+[[platform.java21.dependency]]
+groupId = "io.ballerina.connector.automator.sdkanalyzer"
+artifactId = "native"
+version = "0.1.0"
+path = "./modules/sdkanalyzer/native/build/libs/native-0.1.0.jar"

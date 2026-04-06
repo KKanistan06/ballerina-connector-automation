@@ -1,0 +1,1553 @@
+{
+  "sdkInfo": {
+    "name": "Utils SDK",
+    "version": "unknown",
+    "rootClientClass": "kafka.utils.Logging"
+  },
+  "clientInit": {
+    "patternName": "no-constructor",
+    "initializationCode": "// Logging client = ...",
+    "explanation": "This is a trait/interface (marked as interface=true) that provides logging utility methods through static methods. It's designed to be mixed into other classes rather than instantiated directly, following Scala's trait mixin pattern for adding logging capabilities to classes.",
+    "detectedBy": "llm",
+    "builderClass": null,
+    "connectionFields": [],
+    "syntheticTypeMetadata": []
+  },
+  "rootClient": {
+    "className": "kafka.utils.Logging",
+    "packageName": "kafka.utils",
+    "simpleName": "Logging",
+    "isInterface": true,
+    "constructors": [],
+    "methods": [
+      {
+        "name": "logger$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "com.typesafe.scalalogging.Logger",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "logger$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "logger",
+        "parameters": [],
+        "returnType": "com.typesafe.scalalogging.Logger",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "logger",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "logIdent",
+        "parameters": [],
+        "returnType": "java.lang.String",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "logIdent",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "logIdent_$eq",
+        "parameters": [
+          {
+            "name": "string",
+            "typeName": "java.lang.String",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": true,
+        "signature": "logIdent_$eq",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "loggerName$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "java.lang.String",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "loggerName$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "loggerName",
+        "parameters": [],
+        "returnType": "java.lang.String",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "loggerName",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "msgWithLogIdent$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "string",
+            "typeName": "java.lang.String",
+            "requestFields": []
+          }
+        ],
+        "returnType": "java.lang.String",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "msgWithLogIdent$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "msgWithLogIdent",
+        "parameters": [
+          {
+            "name": "string",
+            "typeName": "java.lang.String",
+            "requestFields": []
+          }
+        ],
+        "returnType": "java.lang.String",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "msgWithLogIdent",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "trace$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "trace$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "trace",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "trace",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "trace$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "trace$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "trace",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "trace",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "isDebugEnabled$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "boolean",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "isDebugEnabled$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "isDebugEnabled",
+        "parameters": [],
+        "returnType": "boolean",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "isDebugEnabled",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "isTraceEnabled$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "boolean",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "isTraceEnabled$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "isTraceEnabled",
+        "parameters": [],
+        "returnType": "boolean",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "isTraceEnabled",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "debug$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "debug$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "debug",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "debug",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "debug$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "debug$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "debug",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "debug",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "info$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "info$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "info",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "info",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "info$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "info$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "info",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "info",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "warn$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "warn$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "warn",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "warn",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "warn$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "warn$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "warn",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "warn",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "error$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "error$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "error",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "error",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "error$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "error$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "error",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "error",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "fatal$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "fatal$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "fatal",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "fatal",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "fatal$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "fatal$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "fatal",
+        "parameters": [
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          },
+          {
+            "name": "function0",
+            "typeName": "scala.Function0",
+            "requestFields": []
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "fatal",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      },
+      {
+        "name": "$init$",
+        "parameters": [
+          {
+            "name": "logging",
+            "typeName": "kafka.utils.Logging",
+            "requestFields": [
+              {
+                "name": "logger",
+                "typeName": "Logger",
+                "fullType": "com.typesafe.scalalogging.Logger",
+                "isRequired": true,
+                "description": null
+              },
+              {
+                "name": "logIdent",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "loggerName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isDebugEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              },
+              {
+                "name": "isTraceEnabled",
+                "typeName": "boolean",
+                "fullType": "boolean",
+                "isRequired": false,
+                "description": null
+              }
+            ]
+          }
+        ],
+        "returnType": "void",
+        "returnFields": [],
+        "exceptions": [],
+        "isStatic": true,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "$init$",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": null
+      }
+    ]
+  },
+  "memberClasses": {},
+  "enums": {},
+  "analysis": {
+    "totalClassesFound": 628,
+    "totalMethodsInClient": 37,
+    "selectedMethods": 37,
+    "analysisApproach": "JavaParser with LLM enhancement"
+  }
+}

@@ -1,0 +1,25 @@
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Ballerina and build artifacts
+target/
+build/
+bin/
+.gradle/
+
+# Generated outputs (exclude all output directories)
+output/
+**/output/
+**/IR-output/
+**/spec-output/
+
+# SDK test assets
+test-jars/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp

@@ -1,0 +1,2075 @@
+{
+  "sdkInfo": {
+    "name": "Sqs SDK",
+    "version": "unknown",
+    "rootClientClass": "software.amazon.awssdk.services.sqs.SqsClient"
+  },
+  "clientInit": {
+    "patternName": "builder",
+    "initializationCode": "SqsClient client = SqsClient.builder().build();",
+    "explanation": "As an interface with no public constructors but static builder() and create() methods, SqsClient follows AWS SDK v2's standard builder pattern. The builder() method provides flexible configuration options while create() offers a convenience method that internally uses the builder with defaults.",
+    "detectedBy": "llm",
+    "builderClass": "software.amazon.awssdk.services.sqs.SqsClientBuilder",
+    "connectionFields": [
+      {
+        "name": "httpClient",
+        "typeName": "SdkHttpClient",
+        "fullType": "software.amazon.awssdk.http.SdkHttpClient",
+        "isRequired": false,
+        "typeReference": "software.amazon.awssdk.http.SdkHttpClient",
+        "description": "Custom HTTP client implementation for making requests to SQS, allowing control over connection pooling, timeouts, and other HTTP-level configurations.",
+        "level1Context": null
+      },
+      {
+        "name": "endpointProvider",
+        "typeName": "SqsEndpointProvider",
+        "fullType": "software.amazon.awssdk.services.sqs.endpoints.SqsEndpointProvider",
+        "isRequired": false,
+        "typeReference": "software.amazon.awssdk.services.sqs.endpoints.SqsEndpointProvider",
+        "description": "Provider that determines the service endpoint URL for each SQS request, supporting custom endpoint resolution logic.",
+        "level1Context": null
+      },
+      {
+        "name": "authSchemeProvider",
+        "typeName": "SqsAuthSchemeProvider",
+        "fullType": "software.amazon.awssdk.services.sqs.auth.scheme.SqsAuthSchemeProvider",
+        "isRequired": false,
+        "typeReference": "software.amazon.awssdk.services.sqs.auth.scheme.SqsAuthSchemeProvider",
+        "description": "Provider that resolves the authentication scheme to use for each SQS request, supporting various AWS auth mechanisms.",
+        "level1Context": null
+      },
+      {
+        "name": "checksumValidationEnabled",
+        "typeName": "boolean",
+        "fullType": "java.lang.Boolean",
+        "isRequired": false,
+        "typeReference": null,
+        "description": "Enables MD5 checksum validation for SQS messages to ensure message integrity during transmission.",
+        "level1Context": null
+      },
+      {
+        "name": "credentialsProvider",
+        "typeName": "AwsCredentialsProvider",
+        "fullType": "software.amazon.awssdk.auth.credentials.AwsCredentialsProvider",
+        "isRequired": true,
+        "typeReference": "software.amazon.awssdk.auth.credentials.AwsCredentialsProvider",
+        "description": "Provides AWS credentials for authenticating requests to SQS, supporting various credential sources like IAM roles, environment variables, or explicit keys.",
+        "level1Context": null
+      },
+      {
+        "name": "region",
+        "typeName": "Region",
+        "fullType": "software.amazon.awssdk.regions.Region",
+        "isRequired": true,
+        "enumReference": "software.amazon.awssdk.regions.Region",
+        "typeReference": null,
+        "description": "AWS region where the SQS service is located, determining the geographical endpoint for requests.",
+        "level1Context": null
+      },
+      {
+        "name": "defaultsMode",
+        "typeName": "DefaultsMode",
+        "fullType": "software.amazon.awssdk.awscore.defaultsmode.DefaultsMode",
+        "isRequired": false,
+        "enumReference": "software.amazon.awssdk.awscore.defaultsmode.DefaultsMode",
+        "typeReference": null,
+        "description": "Configuration mode that determines default values for various client settings based on the deployment environment.",
+        "level1Context": null
+      },
+      {
+        "name": "dualstackEnabled",
+        "typeName": "boolean",
+        "fullType": "java.lang.Boolean",
+        "isRequired": false,
+        "typeReference": null,
+        "description": "Enables IPv4 and IPv6 dual-stack endpoints for SQS requests when available in the region.",
+        "level1Context": null
+      },
+      {
+        "name": "fipsEnabled",
+        "typeName": "boolean",
+        "fullType": "java.lang.Boolean",
+        "isRequired": false,
+        "typeReference": null,
+        "description": "Enables FIPS-compliant endpoints for SQS requests to meet US government security requirements.",
+        "level1Context": null
+      },
+      {
+        "name": "endpointOverride",
+        "typeName": "string",
+        "fullType": "java.net.URI",
+        "isRequired": false,
+        "typeReference": null,
+        "description": "Custom endpoint URI to override the default SQS service endpoint, useful for testing with local SQS implementations or VPC endpoints.",
+        "level1Context": null
+      },
+      {
+        "name": "putAuthScheme",
+        "typeName": "AuthScheme",
+        "fullType": "software.amazon.awssdk.http.auth.spi.scheme.AuthScheme",
+        "isRequired": false,
+        "typeReference": "software.amazon.awssdk.http.auth.spi.scheme.AuthScheme",
+        "description": "Adds a custom authentication scheme to the client's auth scheme registry for specialized authentication requirements.",
+        "level1Context": null
+      }
+    ],
+    "syntheticTypeMetadata": [
+      {
+        "fullType": "software.amazon.awssdk.http.SdkHttpClient",
+        "simpleName": "SdkHttpClient",
+        "ballerinaType": "object",
+        "enumValues": [],
+        "subFields": []
+      },
+      {
+        "fullType": "software.amazon.awssdk.services.sqs.endpoints.SqsEndpointProvider",
+        "simpleName": "SqsEndpointProvider",
+        "ballerinaType": "object",
+        "enumValues": [],
+        "subFields": []
+      },
+      {
+        "fullType": "software.amazon.awssdk.services.sqs.auth.scheme.SqsAuthSchemeProvider",
+        "simpleName": "SqsAuthSchemeProvider",
+        "ballerinaType": "object",
+        "enumValues": [],
+        "subFields": []
+      },
+      {
+        "fullType": "software.amazon.awssdk.auth.credentials.AwsCredentialsProvider",
+        "simpleName": "AwsCredentialsProvider",
+        "ballerinaType": "record",
+        "enumValues": [],
+        "subFields": [
+          {
+            "name": "accessKeyId",
+            "typeName": "string",
+            "fullType": "string",
+            "isRequired": true,
+            "description": "AWS access key ID for authentication."
+          },
+          {
+            "name": "secretAccessKey",
+            "typeName": "string",
+            "fullType": "string",
+            "isRequired": true,
+            "description": "AWS secret access key for authentication."
+          },
+          {
+            "name": "sessionToken",
+            "typeName": "string",
+            "fullType": "string",
+            "isRequired": false,
+            "description": "Optional session token for temporary credentials."
+          }
+        ]
+      },
+      {
+        "fullType": "software.amazon.awssdk.regions.Region",
+        "simpleName": "Region",
+        "ballerinaType": "enum",
+        "enumValues": [
+          "US_EAST_1",
+          "US_WEST_2",
+          "EU_WEST_1",
+          "EU_CENTRAL_1",
+          "AP_SOUTHEAST_1",
+          "AP_NORTHEAST_1"
+        ],
+        "subFields": []
+      },
+      {
+        "fullType": "software.amazon.awssdk.awscore.defaultsmode.DefaultsMode",
+        "simpleName": "DefaultsMode",
+        "ballerinaType": "enum",
+        "enumValues": [
+          "LEGACY",
+          "STANDARD",
+          "MOBILE",
+          "CROSS_REGION",
+          "IN_REGION",
+          "AUTO"
+        ],
+        "subFields": []
+      },
+      {
+        "fullType": "software.amazon.awssdk.http.auth.spi.scheme.AuthScheme",
+        "simpleName": "AuthScheme",
+        "ballerinaType": "object",
+        "enumValues": [],
+        "subFields": []
+      }
+    ]
+  },
+  "rootClient": {
+    "className": "software.amazon.awssdk.services.sqs.SqsClient",
+    "packageName": "software.amazon.awssdk.services.sqs",
+    "simpleName": "SqsClient",
+    "isInterface": true,
+    "constructors": [],
+    "methods": [
+      {
+        "name": "addPermission",
+        "parameters": [
+          {
+            "name": "addPermissionRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.AddPermissionRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue to which permissions are added."
+              },
+              {
+                "name": "label",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The unique identification of the permission you're setting (for example, AliceSendMessage)."
+              },
+              {
+                "name": "awsAccountIds",
+                "typeName": "List",
+                "fullType": "java.util.List<java.lang.String>",
+                "isRequired": true,
+                "description": "The Amazon Web Services account numbers of the principals who are to receive permission."
+              },
+              {
+                "name": "actions",
+                "typeName": "List",
+                "fullType": "java.util.List<java.lang.String>",
+                "isRequired": true,
+                "description": "The action the client wants to allow for the specified principal."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.AddPermissionResponse",
+        "returnFields": [],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.OverLimitException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "addPermission",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Adds a permission to a queue for a specific principal."
+      },
+      {
+        "name": "changeMessageVisibility",
+        "parameters": [
+          {
+            "name": "changeMessageVisibilityRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.ChangeMessageVisibilityRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue whose message's visibility is changed."
+              },
+              {
+                "name": "receiptHandle",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The receipt handle associated with the message, whose visibility timeout is changed."
+              },
+              {
+                "name": "visibilityTimeout",
+                "typeName": "Integer",
+                "fullType": "java.lang.Integer",
+                "isRequired": true,
+                "description": "The new value for the message's visibility timeout (in seconds)."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.ChangeMessageVisibilityResponse",
+        "returnFields": [],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.MessageNotInflightException",
+          "software.amazon.awssdk.services.sqs.model.ReceiptHandleIsInvalidException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "changeMessageVisibility",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Changes the visibility timeout of a specified message in a queue to a new value."
+      },
+      {
+        "name": "changeMessageVisibilityBatch",
+        "parameters": [
+          {
+            "name": "changeMessageVisibilityBatchRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.ChangeMessageVisibilityBatchRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue whose messages' visibility is changed."
+              },
+              {
+                "name": "entries",
+                "typeName": "List",
+                "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.ChangeMessageVisibilityBatchRequestEntry>",
+                "isRequired": true,
+                "memberReference": "software.amazon.awssdk.services.sqs.model.ChangeMessageVisibilityBatchRequestEntry",
+                "description": "Lists the receipt handles of the messages for which the visibility timeout must be changed."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.ChangeMessageVisibilityBatchResponse",
+        "returnFields": [
+          {
+            "name": "successful",
+            "typeName": "List",
+            "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.ChangeMessageVisibilityBatchResultEntry>",
+            "isRequired": false,
+            "memberReference": "software.amazon.awssdk.services.sqs.model.ChangeMessageVisibilityBatchResultEntry",
+            "description": "A list of ChangeMessageVisibilityBatchResultEntry items."
+          },
+          {
+            "name": "failed",
+            "typeName": "List",
+            "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.BatchResultErrorEntry>",
+            "isRequired": false,
+            "memberReference": "software.amazon.awssdk.services.sqs.model.BatchResultErrorEntry",
+            "description": "A list of BatchResultErrorEntry items."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.TooManyEntriesInBatchRequestException",
+          "software.amazon.awssdk.services.sqs.model.EmptyBatchRequestException",
+          "software.amazon.awssdk.services.sqs.model.BatchEntryIdsNotDistinctException",
+          "software.amazon.awssdk.services.sqs.model.InvalidBatchEntryIdException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "changeMessageVisibilityBatch",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Changes the visibility timeout of multiple messages."
+      },
+      {
+        "name": "createQueue",
+        "parameters": [
+          {
+            "name": "createQueueRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.CreateQueueRequest",
+            "requestFields": [
+              {
+                "name": "queueName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The name of the new queue."
+              },
+              {
+                "name": "attributes",
+                "typeName": "Map",
+                "fullType": "java.util.Map<software.amazon.awssdk.services.sqs.model.QueueAttributeName, java.lang.String>",
+                "isRequired": false,
+                "description": "A map of attributes with their corresponding values."
+              },
+              {
+                "name": "tags",
+                "typeName": "Map",
+                "fullType": "java.util.Map<java.lang.String, java.lang.String>",
+                "isRequired": false,
+                "description": "Add cost allocation tags to the specified Amazon SQS queue."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.CreateQueueResponse",
+        "returnFields": [
+          {
+            "name": "queueUrl",
+            "typeName": "String",
+            "fullType": "java.lang.String",
+            "isRequired": false,
+            "description": "The URL of the created Amazon SQS queue."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.QueueDeletedRecentlyException",
+          "software.amazon.awssdk.services.sqs.model.QueueNameExistsException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAttributeNameException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAttributeValueException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "createQueue",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Creates a new standard or FIFO queue."
+      },
+      {
+        "name": "deleteMessage",
+        "parameters": [
+          {
+            "name": "deleteMessageRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.DeleteMessageRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue from which messages are deleted."
+              },
+              {
+                "name": "receiptHandle",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The receipt handle associated with the message to delete."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.DeleteMessageResponse",
+        "returnFields": [],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.InvalidIdFormatException",
+          "software.amazon.awssdk.services.sqs.model.ReceiptHandleIsInvalidException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "deleteMessage",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Deletes the specified message from the specified queue."
+      },
+      {
+        "name": "deleteMessageBatch",
+        "parameters": [
+          {
+            "name": "deleteMessageBatchRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.DeleteMessageBatchRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue from which messages are deleted."
+              },
+              {
+                "name": "entries",
+                "typeName": "List",
+                "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.DeleteMessageBatchRequestEntry>",
+                "isRequired": true,
+                "memberReference": "software.amazon.awssdk.services.sqs.model.DeleteMessageBatchRequestEntry",
+                "description": "Lists the receipt handles for the messages to be deleted."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.DeleteMessageBatchResponse",
+        "returnFields": [
+          {
+            "name": "successful",
+            "typeName": "List",
+            "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.DeleteMessageBatchResultEntry>",
+            "isRequired": false,
+            "memberReference": "software.amazon.awssdk.services.sqs.model.DeleteMessageBatchResultEntry",
+            "description": "A list of DeleteMessageBatchResultEntry items."
+          },
+          {
+            "name": "failed",
+            "typeName": "List",
+            "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.BatchResultErrorEntry>",
+            "isRequired": false,
+            "memberReference": "software.amazon.awssdk.services.sqs.model.BatchResultErrorEntry",
+            "description": "A list of BatchResultErrorEntry items."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.TooManyEntriesInBatchRequestException",
+          "software.amazon.awssdk.services.sqs.model.EmptyBatchRequestException",
+          "software.amazon.awssdk.services.sqs.model.BatchEntryIdsNotDistinctException",
+          "software.amazon.awssdk.services.sqs.model.InvalidBatchEntryIdException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "deleteMessageBatch",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Deletes up to ten messages from the specified queue."
+      },
+      {
+        "name": "deleteQueue",
+        "parameters": [
+          {
+            "name": "deleteQueueRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.DeleteQueueRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue to delete."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.DeleteQueueResponse",
+        "returnFields": [],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "deleteQueue",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Deletes the queue specified by the QueueUrl, regardless of the queue's contents."
+      },
+      {
+        "name": "getQueueAttributes",
+        "parameters": [
+          {
+            "name": "getQueueAttributesRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.GetQueueAttributesRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue whose attribute information is retrieved."
+              },
+              {
+                "name": "attributeNames",
+                "typeName": "List",
+                "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.QueueAttributeName>",
+                "isRequired": true,
+                "memberReference": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+                "description": "A list of attributes for which to retrieve information."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.GetQueueAttributesResponse",
+        "returnFields": [
+          {
+            "name": "attributes",
+            "typeName": "Map",
+            "fullType": "java.util.Map<software.amazon.awssdk.services.sqs.model.QueueAttributeName, java.lang.String>",
+            "isRequired": false,
+            "description": "A map of attributes to their respective values."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.InvalidAttributeNameException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "getQueueAttributes",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Gets attributes for the specified queue."
+      },
+      {
+        "name": "getQueueUrl",
+        "parameters": [
+          {
+            "name": "getQueueUrlRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest",
+            "requestFields": [
+              {
+                "name": "queueName",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "(Required) The name of the queue for which you want to fetch the URL."
+              },
+              {
+                "name": "queueOwnerAWSAccountId",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": "(Optional) The Amazon Web Services account ID of the account that created the queue."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.GetQueueUrlResponse",
+        "returnFields": [
+          {
+            "name": "queueUrl",
+            "typeName": "String",
+            "fullType": "java.lang.String",
+            "isRequired": false,
+            "description": "The URL of the queue."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "getQueueUrl",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "The GetQueueUrl API returns the URL of an existing Amazon SQS queue."
+      },
+      {
+        "name": "listDeadLetterSourceQueues",
+        "parameters": [
+          {
+            "name": "listDeadLetterSourceQueuesRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.ListDeadLetterSourceQueuesRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of a dead-letter queue."
+              },
+              {
+                "name": "nextToken",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": "Pagination token to request the next set of results."
+              },
+              {
+                "name": "maxResults",
+                "typeName": "Integer",
+                "fullType": "java.lang.Integer",
+                "isRequired": false,
+                "description": "Maximum number of results to include in the response."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.ListDeadLetterSourceQueuesResponse",
+        "returnFields": [
+          {
+            "name": "queueUrls",
+            "typeName": "List",
+            "fullType": "java.util.List<java.lang.String>",
+            "isRequired": false,
+            "description": "A list of source queue URLs that have the RedrivePolicy queue attribute configured with a dead-letter queue."
+          },
+          {
+            "name": "nextToken",
+            "typeName": "String",
+            "fullType": "java.lang.String",
+            "isRequired": false,
+            "description": "Pagination token to include in the next request."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "listDeadLetterSourceQueues",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Returns a list of your queues that have the RedrivePolicy queue attribute configured with a dead-letter queue."
+      },
+      {
+        "name": "listQueueTags",
+        "parameters": [
+          {
+            "name": "listQueueTagsRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.ListQueueTagsRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the queue."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.ListQueueTagsResponse",
+        "returnFields": [
+          {
+            "name": "tags",
+            "typeName": "Map",
+            "fullType": "java.util.Map<java.lang.String, java.lang.String>",
+            "isRequired": false,
+            "description": "The list of all tags added to the specified queue."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "listQueueTags",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "List all cost allocation tags added to the specified Amazon SQS queue."
+      },
+      {
+        "name": "listQueues",
+        "parameters": [],
+        "returnType": "software.amazon.awssdk.services.sqs.model.ListQueuesResponse",
+        "returnFields": [
+          {
+            "name": "queueUrls",
+            "typeName": "List",
+            "fullType": "java.util.List<java.lang.String>",
+            "isRequired": false,
+            "description": "A list of queue URLs, up to 1,000 entries, or the value of MaxResults that you sent in the request."
+          },
+          {
+            "name": "nextToken",
+            "typeName": "String",
+            "fullType": "java.lang.String",
+            "isRequired": false,
+            "description": "Pagination token to include in the next request."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "listQueues",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Returns a list of your queues in the current region."
+      },
+      {
+        "name": "purgeQueue",
+        "parameters": [
+          {
+            "name": "purgeQueueRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.PurgeQueueRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the queue from which the PurgeQueue action deletes messages."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.PurgeQueueResponse",
+        "returnFields": [],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.PurgeQueueInProgressException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "purgeQueue",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Deletes available messages in a queue (including in-flight messages) specified by the QueueURL parameter."
+      },
+      {
+        "name": "receiveMessage",
+        "parameters": [
+          {
+            "name": "receiveMessageRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue from which messages are received."
+              },
+              {
+                "name": "attributeNames",
+                "typeName": "List",
+                "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.QueueAttributeName>",
+                "isRequired": false,
+                "memberReference": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+                "description": "Deprecated."
+              },
+              {
+                "name": "messageSystemAttributeNames",
+                "typeName": "List",
+                "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName>",
+                "isRequired": false,
+                "memberReference": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+                "description": "A list of attributes that need to be returned along with each message."
+              },
+              {
+                "name": "messageAttributeNames",
+                "typeName": "List",
+                "fullType": "java.util.List<java.lang.String>",
+                "isRequired": false,
+                "description": "The name of the message attribute, where N is the index."
+              },
+              {
+                "name": "maxNumberOfMessages",
+                "typeName": "Integer",
+                "fullType": "java.lang.Integer",
+                "isRequired": false,
+                "description": "The maximum number of messages to return."
+              },
+              {
+                "name": "visibilityTimeout",
+                "typeName": "Integer",
+                "fullType": "java.lang.Integer",
+                "isRequired": false,
+                "description": "The duration (in seconds) that the received messages are hidden from subsequent retrieve requests after being retrieved by a ReceiveMessage request."
+              },
+              {
+                "name": "waitTimeSeconds",
+                "typeName": "Integer",
+                "fullType": "java.lang.Integer",
+                "isRequired": false,
+                "description": "The duration (in seconds) for which the call waits for a message to arrive in the queue before returning."
+              },
+              {
+                "name": "receiveRequestAttemptId",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": "This parameter applies only to FIFO (first-in-first-out) queues."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.ReceiveMessageResponse",
+        "returnFields": [
+          {
+            "name": "messages",
+            "typeName": "List",
+            "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.Message>",
+            "isRequired": false,
+            "memberReference": "software.amazon.awssdk.services.sqs.model.Message",
+            "description": "A list of messages."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.OverLimitException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.KmsDisabledException",
+          "software.amazon.awssdk.services.sqs.model.KmsInvalidStateException",
+          "software.amazon.awssdk.services.sqs.model.KmsNotFoundException",
+          "software.amazon.awssdk.services.sqs.model.KmsOptInRequiredException",
+          "software.amazon.awssdk.services.sqs.model.KmsThrottledException",
+          "software.amazon.awssdk.services.sqs.model.KmsAccessDeniedException",
+          "software.amazon.awssdk.services.sqs.model.KmsInvalidKeyUsageException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "receiveMessage",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Retrieves one or more messages (up to 10), from the specified queue."
+      },
+      {
+        "name": "removePermission",
+        "parameters": [
+          {
+            "name": "removePermissionRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.RemovePermissionRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue from which permissions are removed."
+              },
+              {
+                "name": "label",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The identification of the permission to remove."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.RemovePermissionResponse",
+        "returnFields": [],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "removePermission",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Revokes any permissions in the queue policy that matches the specified Label parameter."
+      },
+      {
+        "name": "sendMessage",
+        "parameters": [
+          {
+            "name": "sendMessageRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.SendMessageRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue to which a message is sent."
+              },
+              {
+                "name": "messageBody",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The message to send."
+              },
+              {
+                "name": "delaySeconds",
+                "typeName": "Integer",
+                "fullType": "java.lang.Integer",
+                "isRequired": false,
+                "description": "The length of time, in seconds, for which to delay a specific message."
+              },
+              {
+                "name": "messageAttributes",
+                "typeName": "Map",
+                "fullType": "java.util.Map<java.lang.String, software.amazon.awssdk.services.sqs.model.MessageAttributeValue>",
+                "isRequired": false,
+                "memberReference": "software.amazon.awssdk.services.sqs.model.MessageAttributeValue",
+                "description": "Each message attribute consists of a Name, Type, and Value."
+              },
+              {
+                "name": "messageSystemAttributes",
+                "typeName": "Map",
+                "fullType": "java.util.Map<software.amazon.awssdk.services.sqs.model.MessageSystemAttributeNameForSends, software.amazon.awssdk.services.sqs.model.MessageSystemAttributeValue>",
+                "isRequired": false,
+                "memberReference": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeValue",
+                "description": "The message system attribute to send."
+              },
+              {
+                "name": "messageDeduplicationId",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": "This parameter applies only to FIFO (first-in-first-out) queues."
+              },
+              {
+                "name": "messageGroupId",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": false,
+                "description": "This parameter applies only to FIFO (first-in-first-out) queues."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.SendMessageResponse",
+        "returnFields": [
+          {
+            "name": "md5OfMessageBody",
+            "typeName": "String",
+            "fullType": "java.lang.String",
+            "isRequired": false,
+            "description": "An MD5 digest of the non-URL-encoded message body string."
+          },
+          {
+            "name": "md5OfMessageAttributes",
+            "typeName": "String",
+            "fullType": "java.lang.String",
+            "isRequired": false,
+            "description": "An MD5 digest of the non-URL-encoded message attribute string."
+          },
+          {
+            "name": "md5OfMessageSystemAttributes",
+            "typeName": "String",
+            "fullType": "java.lang.String",
+            "isRequired": false,
+            "description": "An MD5 digest of the non-URL-encoded message system attribute string."
+          },
+          {
+            "name": "messageId",
+            "typeName": "String",
+            "fullType": "java.lang.String",
+            "isRequired": false,
+            "description": "An attribute containing the MessageId of the message sent to the queue."
+          },
+          {
+            "name": "sequenceNumber",
+            "typeName": "String",
+            "fullType": "java.lang.String",
+            "isRequired": false,
+            "description": "This parameter applies only to FIFO (first-in-first-out) queues."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.InvalidMessageContentsException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.KmsDisabledException",
+          "software.amazon.awssdk.services.sqs.model.KmsInvalidStateException",
+          "software.amazon.awssdk.services.sqs.model.KmsNotFoundException",
+          "software.amazon.awssdk.services.sqs.model.KmsOptInRequiredException",
+          "software.amazon.awssdk.services.sqs.model.KmsThrottledException",
+          "software.amazon.awssdk.services.sqs.model.KmsAccessDeniedException",
+          "software.amazon.awssdk.services.sqs.model.KmsInvalidKeyUsageException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "sendMessage",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Delivers a message to the specified queue."
+      },
+      {
+        "name": "sendMessageBatch",
+        "parameters": [
+          {
+            "name": "sendMessageBatchRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.SendMessageBatchRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue to which batched messages are sent."
+              },
+              {
+                "name": "entries",
+                "typeName": "List",
+                "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.SendMessageBatchRequestEntry>",
+                "isRequired": true,
+                "memberReference": "software.amazon.awssdk.services.sqs.model.SendMessageBatchRequestEntry",
+                "description": "A list of SendMessageBatchRequestEntry items."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.SendMessageBatchResponse",
+        "returnFields": [
+          {
+            "name": "successful",
+            "typeName": "List",
+            "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.SendMessageBatchResultEntry>",
+            "isRequired": false,
+            "memberReference": "software.amazon.awssdk.services.sqs.model.SendMessageBatchResultEntry",
+            "description": "A list of SendMessageBatchResultEntry items."
+          },
+          {
+            "name": "failed",
+            "typeName": "List",
+            "fullType": "java.util.List<software.amazon.awssdk.services.sqs.model.BatchResultErrorEntry>",
+            "isRequired": false,
+            "memberReference": "software.amazon.awssdk.services.sqs.model.BatchResultErrorEntry",
+            "description": "A list of BatchResultErrorEntry items with error details about each message that can't be enqueued."
+          }
+        ],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.TooManyEntriesInBatchRequestException",
+          "software.amazon.awssdk.services.sqs.model.EmptyBatchRequestException",
+          "software.amazon.awssdk.services.sqs.model.BatchEntryIdsNotDistinctException",
+          "software.amazon.awssdk.services.sqs.model.BatchRequestTooLongException",
+          "software.amazon.awssdk.services.sqs.model.InvalidBatchEntryIdException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.KmsDisabledException",
+          "software.amazon.awssdk.services.sqs.model.KmsInvalidStateException",
+          "software.amazon.awssdk.services.sqs.model.KmsNotFoundException",
+          "software.amazon.awssdk.services.sqs.model.KmsOptInRequiredException",
+          "software.amazon.awssdk.services.sqs.model.KmsThrottledException",
+          "software.amazon.awssdk.services.sqs.model.KmsAccessDeniedException",
+          "software.amazon.awssdk.services.sqs.model.KmsInvalidKeyUsageException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "sendMessageBatch",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "You can use SendMessageBatch to send up to 10 messages to the specified queue by assigning either identical or different values to each message (or by not assigning values at all)."
+      },
+      {
+        "name": "setQueueAttributes",
+        "parameters": [
+          {
+            "name": "setQueueAttributesRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.SetQueueAttributesRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the Amazon SQS queue whose attributes are set."
+              },
+              {
+                "name": "attributes",
+                "typeName": "Map",
+                "fullType": "java.util.Map<software.amazon.awssdk.services.sqs.model.QueueAttributeName, java.lang.String>",
+                "isRequired": true,
+                "description": "A map of attributes to set."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.SetQueueAttributesResponse",
+        "returnFields": [],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.InvalidAttributeNameException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAttributeValueException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.services.sqs.model.OverLimitException",
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "setQueueAttributes",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Sets the value of one or more queue attributes, like a policy."
+      },
+      {
+        "name": "tagQueue",
+        "parameters": [
+          {
+            "name": "tagQueueRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.TagQueueRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the queue."
+              },
+              {
+                "name": "tags",
+                "typeName": "Map",
+                "fullType": "java.util.Map<java.lang.String, java.lang.String>",
+                "isRequired": true,
+                "description": "The list of tags to be added to the specified queue."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.TagQueueResponse",
+        "returnFields": [],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "tagQueue",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Add cost allocation tags to the specified Amazon SQS queue."
+      },
+      {
+        "name": "untagQueue",
+        "parameters": [
+          {
+            "name": "untagQueueRequest",
+            "typeName": "software.amazon.awssdk.services.sqs.model.UntagQueueRequest",
+            "requestFields": [
+              {
+                "name": "queueUrl",
+                "typeName": "String",
+                "fullType": "java.lang.String",
+                "isRequired": true,
+                "description": "The URL of the queue."
+              },
+              {
+                "name": "tagKeys",
+                "typeName": "List",
+                "fullType": "java.util.List<java.lang.String>",
+                "isRequired": true,
+                "description": "The list of tags to be removed from the specified queue."
+              }
+            ]
+          }
+        ],
+        "returnType": "software.amazon.awssdk.services.sqs.model.UntagQueueResponse",
+        "returnFields": [],
+        "exceptions": [
+          "software.amazon.awssdk.services.sqs.model.InvalidAddressException",
+          "software.amazon.awssdk.services.sqs.model.RequestThrottledException",
+          "software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException",
+          "software.amazon.awssdk.services.sqs.model.InvalidSecurityException",
+          "software.amazon.awssdk.services.sqs.model.UnsupportedOperationException",
+          "software.amazon.awssdk.awscore.exception.AwsServiceException",
+          "software.amazon.awssdk.core.exception.SdkClientException",
+          "software.amazon.awssdk.services.sqs.model.SqsException"
+        ],
+        "isStatic": false,
+        "isFinal": false,
+        "isAbstract": false,
+        "signature": "untagQueue",
+        "isDeprecated": false,
+        "typeParameters": [],
+        "annotations": [],
+        "description": "Remove cost allocation tags from the specified Amazon SQS queue."
+      }
+    ]
+  },
+  "memberClasses": {
+    "software.amazon.awssdk.services.sqs.model.ChangeMessageVisibilityBatchRequestEntry": {
+      "simpleName": "ChangeMessageVisibilityBatchRequestEntry",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "id",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An identifier for this particular receipt handle used to communicate the result."
+        },
+        {
+          "name": "receiptHandle",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "A receipt handle."
+        },
+        {
+          "name": "visibilityTimeout",
+          "typeName": "Integer",
+          "fullType": "java.lang.Integer",
+          "isRequired": false,
+          "description": "The new value (in seconds) for the message's visibility timeout."
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.ChangeMessageVisibilityBatchResultEntry": {
+      "simpleName": "ChangeMessageVisibilityBatchResultEntry",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "id",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "Represents a message whose visibility timeout has been changed successfully."
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.BatchResultErrorEntry": {
+      "simpleName": "BatchResultErrorEntry",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "id",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "The Id of an entry in a batch request."
+        },
+        {
+          "name": "senderFault",
+          "typeName": "Boolean",
+          "fullType": "java.lang.Boolean",
+          "isRequired": false,
+          "description": "Specifies whether the error happened due to the caller of the batch API action."
+        },
+        {
+          "name": "code",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An error code representing why the action failed on this entry."
+        },
+        {
+          "name": "message",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "A message explaining why the action failed on this entry."
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.DeleteMessageBatchRequestEntry": {
+      "simpleName": "DeleteMessageBatchRequestEntry",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "id",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "The identifier for this particular receipt handle."
+        },
+        {
+          "name": "receiptHandle",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "A receipt handle."
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.DeleteMessageBatchResultEntry": {
+      "simpleName": "DeleteMessageBatchResultEntry",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "id",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "Represents a successfully deleted message."
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.QueueAttributeName": {
+      "simpleName": "QueueAttributeName",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "ALL",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "POLICY",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "VISIBILITY_TIMEOUT",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "MAXIMUM_MESSAGE_SIZE",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "MESSAGE_RETENTION_PERIOD",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "APPROXIMATE_NUMBER_OF_MESSAGES",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "APPROXIMATE_NUMBER_OF_MESSAGES_NOT_VISIBLE",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "CREATED_TIMESTAMP",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "LAST_MODIFIED_TIMESTAMP",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "QUEUE_ARN",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "APPROXIMATE_NUMBER_OF_MESSAGES_DELAYED",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "DELAY_SECONDS",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "RECEIVE_MESSAGE_WAIT_TIME_SECONDS",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "REDRIVE_POLICY",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "FIFO_QUEUE",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "CONTENT_BASED_DEDUPLICATION",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "KMS_MASTER_KEY_ID",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "KMS_DATA_KEY_REUSE_PERIOD_SECONDS",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "DEDUPLICATION_SCOPE",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "FIFO_THROUGHPUT_LIMIT",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "REDRIVE_ALLOW_POLICY",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "SQS_MANAGED_SSE_ENABLED",
+          "typeName": "QueueAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.QueueAttributeName",
+          "isRequired": false,
+          "description": null
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName": {
+      "simpleName": "MessageSystemAttributeName",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "ALL",
+          "typeName": "MessageSystemAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "SENDER_ID",
+          "typeName": "MessageSystemAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "SENT_TIMESTAMP",
+          "typeName": "MessageSystemAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "APPROXIMATE_RECEIVE_COUNT",
+          "typeName": "MessageSystemAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "APPROXIMATE_FIRST_RECEIVE_TIMESTAMP",
+          "typeName": "MessageSystemAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "SEQUENCE_NUMBER",
+          "typeName": "MessageSystemAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "MESSAGE_DEDUPLICATION_ID",
+          "typeName": "MessageSystemAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "MESSAGE_GROUP_ID",
+          "typeName": "MessageSystemAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "AWS_TRACE_HEADER",
+          "typeName": "MessageSystemAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+          "isRequired": false,
+          "description": null
+        },
+        {
+          "name": "DEAD_LETTER_QUEUE_SOURCE_ARN",
+          "typeName": "MessageSystemAttributeName",
+          "fullType": "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName",
+          "isRequired": false,
+          "description": null
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.Message": {
+      "simpleName": "Message",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "messageId",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "A unique identifier for the message."
+        },
+        {
+          "name": "receiptHandle",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An identifier associated with the act of receiving the message."
+        },
+        {
+          "name": "md5OfBody",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An MD5 digest of the non-URL-encoded message body string."
+        },
+        {
+          "name": "body",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "The message's contents (not URL-encoded)."
+        },
+        {
+          "name": "attributes",
+          "typeName": "Map",
+          "fullType": "java.util.Map<software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName, java.lang.String>",
+          "isRequired": false,
+          "description": "A map of the attributes requested in ReceiveMessage to their respective values."
+        },
+        {
+          "name": "md5OfMessageAttributes",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An MD5 digest of the non-URL-encoded message attribute string."
+        },
+        {
+          "name": "messageAttributes",
+          "typeName": "Map",
+          "fullType": "java.util.Map<java.lang.String, software.amazon.awssdk.services.sqs.model.MessageAttributeValue>",
+          "isRequired": false,
+          "description": "Each message attribute consists of a Name, Type, and Value."
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.MessageAttributeValue": {
+      "simpleName": "MessageAttributeValue",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "stringValue",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "Strings are Unicode with UTF-8 binary encoding."
+        },
+        {
+          "name": "binaryValue",
+          "typeName": "SdkBytes",
+          "fullType": "software.amazon.awssdk.core.SdkBytes",
+          "isRequired": false,
+          "description": "Binary type attributes can store any binary data, such as compressed data, encrypted data, or images."
+        },
+        {
+          "name": "stringListValues",
+          "typeName": "List",
+          "fullType": "java.util.List<java.lang.String>",
+          "isRequired": false,
+          "description": "Not implemented."
+        },
+        {
+          "name": "binaryListValues",
+          "typeName": "List",
+          "fullType": "java.util.List<software.amazon.awssdk.core.SdkBytes>",
+          "isRequired": false,
+          "description": "Not implemented."
+        },
+        {
+          "name": "dataType",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "Amazon SQS supports the following logical data types: String, Number, and Binary."
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.MessageSystemAttributeValue": {
+      "simpleName": "MessageSystemAttributeValue",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "stringValue",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "Strings are Unicode with UTF-8 binary encoding."
+        },
+        {
+          "name": "binaryValue",
+          "typeName": "SdkBytes",
+          "fullType": "software.amazon.awssdk.core.SdkBytes",
+          "isRequired": false,
+          "description": "Binary type attributes can store any binary data, such as compressed data, encrypted data, or images."
+        },
+        {
+          "name": "stringListValues",
+          "typeName": "List",
+          "fullType": "java.util.List<java.lang.String>",
+          "isRequired": false,
+          "description": "Not implemented."
+        },
+        {
+          "name": "binaryListValues",
+          "typeName": "List",
+          "fullType": "java.util.List<software.amazon.awssdk.core.SdkBytes>",
+          "isRequired": false,
+          "description": "Not implemented."
+        },
+        {
+          "name": "dataType",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "Amazon SQS supports the following logical data types: String, Number, and Binary."
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.SendMessageBatchRequestEntry": {
+      "simpleName": "SendMessageBatchRequestEntry",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "id",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An identifier for a message in this batch used to communicate the result."
+        },
+        {
+          "name": "messageBody",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "The body of the message."
+        },
+        {
+          "name": "delaySeconds",
+          "typeName": "Integer",
+          "fullType": "java.lang.Integer",
+          "isRequired": false,
+          "description": "The length of time, in seconds, for which a specific message is delayed."
+        },
+        {
+          "name": "messageAttributes",
+          "typeName": "Map",
+          "fullType": "java.util.Map<java.lang.String, software.amazon.awssdk.services.sqs.model.MessageAttributeValue>",
+          "isRequired": false,
+          "description": "Each message attribute consists of a Name, Type, and Value."
+        },
+        {
+          "name": "messageSystemAttributes",
+          "typeName": "Map",
+          "fullType": "java.util.Map<software.amazon.awssdk.services.sqs.model.MessageSystemAttributeNameForSends, software.amazon.awssdk.services.sqs.model.MessageSystemAttributeValue>",
+          "isRequired": false,
+          "description": "The message system attribute to send Each message system attribute consists of a Name, Type, and Value."
+        },
+        {
+          "name": "messageDeduplicationId",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "This parameter applies only to FIFO (first-in-first-out) queues."
+        },
+        {
+          "name": "messageGroupId",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "This parameter applies only to FIFO (first-in-first-out) queues."
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.model.SendMessageBatchResultEntry": {
+      "simpleName": "SendMessageBatchResultEntry",
+      "packageName": "software.amazon.awssdk.services.sqs.model",
+      "fields": [
+        {
+          "name": "id",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An identifier for the message in this batch."
+        },
+        {
+          "name": "messageId",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An identifier for the message."
+        },
+        {
+          "name": "md5OfMessageBody",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An MD5 digest of the non-URL-encoded message body string."
+        },
+        {
+          "name": "md5OfMessageAttributes",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An MD5 digest of the non-URL-encoded message attribute string."
+        },
+        {
+          "name": "md5OfMessageSystemAttributes",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "An MD5 digest of the non-URL-encoded message system attribute string."
+        },
+        {
+          "name": "sequenceNumber",
+          "typeName": "String",
+          "fullType": "java.lang.String",
+          "isRequired": false,
+          "description": "This parameter applies only to FIFO (first-in-first-out) queues."
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.endpoints.SqsEndpointProvider": {
+      "simpleName": "SqsEndpointProvider",
+      "packageName": "software.amazon.awssdk.services.sqs.endpoints",
+      "fields": [
+        {
+          "name": "defaultProvider",
+          "typeName": "SqsEndpointProvider",
+          "fullType": "software.amazon.awssdk.services.sqs.endpoints.SqsEndpointProvider",
+          "isRequired": false,
+          "description": null
+        }
+      ]
+    },
+    "software.amazon.awssdk.services.sqs.auth.scheme.SqsAuthSchemeProvider": {
+      "simpleName": "SqsAuthSchemeProvider",
+      "packageName": "software.amazon.awssdk.services.sqs.auth.scheme",
+      "fields": [
+        {
+          "name": "defaultProvider",
+          "typeName": "SqsAuthSchemeProvider",
+          "fullType": "software.amazon.awssdk.services.sqs.auth.scheme.SqsAuthSchemeProvider",
+          "isRequired": false,
+          "description": "Get the default auth scheme provider the preferred auth schemes in order of preference."
+        }
+      ]
+    },
+    "software.amazon.awssdk.http.SdkHttpClient": {
+      "simpleName": "SdkHttpClient",
+      "packageName": "software.amazon.awssdk.http",
+      "fields": []
+    },
+    "software.amazon.awssdk.auth.credentials.AwsCredentialsProvider": {
+      "simpleName": "AwsCredentialsProvider",
+      "packageName": "software.amazon.awssdk.auth.credentials",
+      "fields": [
+        {
+          "name": "accessKeyId",
+          "typeName": "string",
+          "fullType": "string",
+          "isRequired": true,
+          "description": "AWS access key ID for authentication."
+        },
+        {
+          "name": "secretAccessKey",
+          "typeName": "string",
+          "fullType": "string",
+          "isRequired": true,
+          "description": "AWS secret access key for authentication."
+        },
+        {
+          "name": "sessionToken",
+          "typeName": "string",
+          "fullType": "string",
+          "isRequired": false,
+          "description": "Optional session token for temporary credentials."
+        }
+      ]
+    },
+    "software.amazon.awssdk.http.auth.spi.scheme.AuthScheme": {
+      "simpleName": "AuthScheme",
+      "packageName": "software.amazon.awssdk.http.auth.spi.scheme",
+      "fields": []
+    }
+  },
+  "enums": {
+    "software.amazon.awssdk.regions.Region": {
+      "simpleName": "Region",
+      "values": [
+        "US_EAST_1",
+        "US_WEST_2",
+        "EU_WEST_1",
+        "EU_CENTRAL_1",
+        "AP_SOUTHEAST_1",
+        "AP_NORTHEAST_1"
+      ]
+    },
+    "software.amazon.awssdk.awscore.defaultsmode.DefaultsMode": {
+      "simpleName": "DefaultsMode",
+      "values": [
+        "LEGACY",
+        "STANDARD",
+        "MOBILE",
+        "CROSS_REGION",
+        "IN_REGION",
+        "AUTO"
+      ]
+    }
+  },
+  "analysis": {
+    "totalClassesFound": 255,
+    "totalMethodsInClient": 58,
+    "selectedMethods": 20,
+    "analysisApproach": "JavaParser with LLM enhancement"
+  }
+}
