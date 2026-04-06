@@ -577,7 +577,6 @@ public class MavenResolver {
             String searchUrl = String.format("https://search.maven.org/solrsearch/select?q=fc:%s&rows=5&wt=json",
                     encodedClass);
 
-            @SuppressWarnings("deprecation")
             var url = new URL(searchUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(TIMEOUT);

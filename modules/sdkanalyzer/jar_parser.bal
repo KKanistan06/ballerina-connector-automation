@@ -545,16 +545,6 @@ function convertConstructors(json[]? ctors) returns ConstructorInfo[] {
     return out;
 }
 
-# External function to analyze JAR (Java interop).
-#
-# + jarPathOrResolved - JAR file path or Maven resolution map
-# + return - JSON array
-function analyzeJarExternal(string|map<json> jarPathOrResolved) returns json = @java:Method {
-    'class: "io.ballerina.connector.automator.sdkanalyzer.JarAnalyzer",
-    name: "parseJar",
-    paramTypes: ["java.lang.Object"]
-} external;
-
 # External function to analyze JAR using JavaParser approach.
 #
 # + jarPathOrResolved - JAR file path or Maven resolution map
