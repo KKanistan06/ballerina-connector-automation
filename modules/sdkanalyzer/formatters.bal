@@ -26,14 +26,14 @@ public function formatClassInfoForLLM(ClassInfo cls) returns string {
         MethodInfo m = cls.methods[i];
         methodList = methodList + string `  - ${m.name}(${m.parameters.length()} params) -> ${m.returnType}\n`;
     }
-    
+
     string superClassInfo;
     if cls.superClass is () {
         superClassInfo = "None";
     } else {
         superClassInfo = <string>cls.superClass;
     }
-    
+
     return string `
             Class Name: ${cls.className}
             Simple Name: ${cls.simpleName}

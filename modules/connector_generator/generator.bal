@@ -1,8 +1,10 @@
 import ballerina/io;
+import ballerina/regex;
 import ballerina/time;
-import wso2/connector_automation.sdkanalyzer as analyzer;
+
 import wso2/connector_automation.api_specification_generator as api;
 import wso2/connector_automation.code_fixer as fixer;
+import wso2/connector_automation.sdkanalyzer as analyzer;
 
 # Generate connector artifacts from metadata JSON, IR JSON, and API spec.
 #
@@ -11,6 +13,8 @@ import wso2/connector_automation.code_fixer as fixer;
 public function generateConnector(ConnectorGeneratorConfig config)
         returns ConnectorGeneratorResult|ConnectorGeneratorError {
     time:Utc startTime = time:utcNow();
+
+    printConnectorPlan(config);
 
     if !isAnthropicConfigured() {
         return error ConnectorGeneratorError("ANTHROPIC_API_KEY environment variable not set. " +
@@ -22,9 +26,7 @@ public function generateConnector(ConnectorGeneratorConfig config)
         return error ConnectorGeneratorError(string `Failed to load inputs: ${loaded.message()}`, loaded);
     }
 
-    if !config.quietMode {
-        io:println("Step 1/4: Generating connector bundle via LLM...");
-    }
+    printConnectorStep(1, "Generating connector bundle via LLM", config.quietMode);
     GeneratedConnectorBundle|error bundleResult = generateConnectorBundleViaLLM(loaded, config);
     if bundleResult is error {
         return error ConnectorGeneratorError(
@@ -32,25 +34,27 @@ public function generateConnector(ConnectorGeneratorConfig config)
             bundleResult);
     }
     GeneratedConnectorBundle bundle = bundleResult;
+    bundle.typesBal = buildTypesBal(loaded.parsedSpec);
+    bundle.clientBal = normalizeClientInteropDeclarations(bundle.clientBal);
+    bundle.clientBal = applyClientDocsFromApiSpec(bundle.clientBal, loaded.apiSpecText);
+    bundle.nativeAdaptorJava = normalizeNativeAdaptorWarnings(bundle.nativeAdaptorJava);
 
-    if !config.quietMode {
-        io:println("Step 2/4: Validating generated connector bundle...");
-    }
+    printConnectorStep(2, "Validating generated connector bundle", config.quietMode);
+    string[] validationFailures = [];
     error? validationError = validateGeneratedBundle(bundle, loaded);
     if validationError is error {
-        return error ConnectorGeneratorError(
-            string `Generated connector failed validation: ${validationError.message()}`,
-            validationError);
+        validationFailures.push(validationError.message());
+        if !config.quietMode {
+            io:println("  → Validation reported issues. Artifacts will still be written for inspection.");
+        }
     }
 
     string clientFileName = "client.bal";
     string typesFileName = "types.bal";
     string nativeSourcePath = normalizeNativeSourcePath(bundle.nativeAdaptorFilePath, bundle.nativeAdaptorClassName,
-        "NativeAdaptor");
+            "NativeAdaptor");
 
-    if !config.quietMode {
-        io:println("Step 3/4: Writing generated connector artifacts...");
-    }
+    printConnectorStep(3, "Writing generated connector artifacts", config.quietMode);
     record {|string clientPath; string typesPath; string nativePath;|}|error writeResult =
         writeConnectorArtifactsWithNames(
             bundle.clientBal,
@@ -65,14 +69,25 @@ public function generateConnector(ConnectorGeneratorConfig config)
             writeResult);
     }
 
+    if validationFailures.length() > 0 {
+        string validationSummary = "";
+        foreach string failure in validationFailures {
+            validationSummary += string `\n- ${failure}`;
+        }
+        return error ConnectorGeneratorError(
+            string `Generated connector failed validation: Validation failures:${validationSummary}
+Artifacts written for inspection:
+  client: ${writeResult.clientPath}
+  types:  ${writeResult.typesPath}
+  native: ${writeResult.nativePath}`);
+    }
+
     int mapped = countResolvedMappings(bundle.methodMappings, loaded.metadata.rootClient.methods);
 
     time:Utc endTime = time:utcNow();
     int durationMs = <int>(time:utcDiffSeconds(endTime, startTime) * 1000);
 
-    if !config.quietMode {
-        io:println("Step 4/4: Connector generation completed successfully.");
-    }
+    printConnectorStep(4, "Connector generation completed successfully", config.quietMode);
 
     boolean codeFixingRan = false;
     boolean codeFixingSuccess = false;
@@ -85,11 +100,16 @@ public function generateConnector(ConnectorGeneratorConfig config)
 
         boolean autoYes = config.fixMode != "report-only";
         fixer:FixResult|fixer:BallerinaFixerError fixResult = fixer:fixJavaNativeAdaptorErrors(config.outputDir,
-            config.quietMode, autoYes, config.maxFixIterations);
+                config.quietMode, autoYes, config.maxFixIterations);
         if fixResult is fixer:BallerinaFixerError {
             return error ConnectorGeneratorError(string `Code fixing failed: ${fixResult.message()}`, fixResult);
         }
         codeFixingSuccess = fixResult.success;
+    }
+
+    if !config.quietMode {
+        printConnectorSummary(writeResult.clientPath, writeResult.typesPath, writeResult.nativePath, mapped, durationMs,
+            codeFixingRan, codeFixingSuccess);
     }
 
     return {
@@ -103,6 +123,65 @@ public function generateConnector(ConnectorGeneratorConfig config)
         codeFixingRan: codeFixingRan,
         codeFixingSuccess: codeFixingSuccess
     };
+}
+
+function printConnectorPlan(ConnectorGeneratorConfig config) {
+    if config.quietMode {
+        return;
+    }
+    string sep = createConnectorSeparator("=", 70);
+    io:println(sep);
+    io:println("Connector Generation Plan");
+    io:println(sep);
+    io:println(string `Metadata: ${config.metadataPath}`);
+    io:println(string `IR: ${config.irPath}`);
+    io:println(string `Spec: ${config.apiSpecPath}`);
+    io:println(string `Output Dir: ${config.outputDir}`);
+    io:println("");
+    io:println("Operations:");
+    io:println("  1. Generate connector bundle via LLM");
+    io:println("  2. Validate generated artifacts");
+    io:println("  3. Write Ballerina and Java outputs");
+    io:println("  4. Optional post-generation code fixing");
+    io:println(sep);
+}
+
+function printConnectorSummary(string clientPath, string typesPath, string nativePath, int mapped,
+        int durationMs, boolean codeFixingRan, boolean codeFixingSuccess) {
+    string sep = createConnectorSeparator("=", 70);
+    io:println("");
+    io:println(sep);
+    io:println("✓ Connector Generation Complete");
+    io:println(sep);
+    io:println(string `  • client: ${clientPath}`);
+    io:println(string `  • types: ${typesPath}`);
+    io:println(string `  • native: ${nativePath}`);
+    io:println(string `  • mapped methods: ${mapped}`);
+    io:println(string `  • duration: ${durationMs}ms`);
+    if codeFixingRan {
+        io:println(string `  • code fixing: ${codeFixingSuccess ? "success" : "partial/failed"}`);
+    }
+    io:println(sep);
+}
+
+function printConnectorStep(int stepNum, string title, boolean quietMode) {
+    if quietMode {
+        return;
+    }
+    string sep = createConnectorSeparator("-", 50);
+    io:println("");
+    io:println(string `Step ${stepNum}: ${title}`);
+    io:println(sep);
+}
+
+function createConnectorSeparator(string char, int length) returns string {
+    string[] chars = [];
+    int i = 0;
+    while i < length {
+        chars.push(char);
+        i += 1;
+    }
+    return string:'join("", ...chars);
 }
 
 # CLI entrypoint for connector command.
@@ -207,17 +286,17 @@ function loadInputs(ConnectorGeneratorConfig config) returns ConnectorGeneration
 function generateConnectorBundleViaLLM(ConnectorGenerationInputs loaded,
         ConnectorGeneratorConfig config) returns GeneratedConnectorBundle|error {
     AnthropicConfig anthropicConfig = check getAnthropicConfig(
-        config.maxTokens,
-        config.enableExtendedThinking,
-        config.thinkingBudgetTokens
+            config.maxTokens,
+            config.enableExtendedThinking,
+            config.thinkingBudgetTokens
     );
 
     string systemPrompt = getConnectorGenerationSystemPrompt();
     string userPrompt = getConnectorGenerationUserPrompt(
-        loaded.metadataJsonText,
-        loaded.irJsonText,
-        loaded.apiSpecText,
-        config.sdkVersionHint
+            loaded.metadataJsonText,
+            loaded.irJsonText,
+            loaded.apiSpecText,
+            config.sdkVersionHint
     );
 
     json llmResponse = check callAnthropicAPI(anthropicConfig, systemPrompt, userPrompt);
@@ -307,6 +386,21 @@ function validateGeneratedBundle(GeneratedConnectorBundle bundle,
         }
     }
 
+    error? interopValidationError = validateClientInteropDeclarations(bundle.clientBal);
+    if interopValidationError is error {
+        return interopValidationError;
+    }
+
+    error? nativeTypeImportValidationError = validateNativeTypeImports(bundle.nativeAdaptorJava);
+    if nativeTypeImportValidationError is error {
+        return nativeTypeImportValidationError;
+    }
+
+    error? nativeWarningValidationError = validateNativeWarningPatterns(bundle.nativeAdaptorJava);
+    if nativeWarningValidationError is error {
+        return nativeWarningValidationError;
+    }
+
     if !bundle.validation.allSpecMethodsMapped || bundle.validation.unmappedSpecMethods.length() > 0 {
         return error("LLM validation indicates unmapped API spec methods");
     }
@@ -315,6 +409,480 @@ function validateGeneratedBundle(GeneratedConnectorBundle bundle,
     }
     if bundle.validation.typeReferenceErrors.length() > 0 {
         return error("LLM validation indicates type reference errors");
+    }
+}
+
+function validateClientInteropDeclarations(string clientBal) returns error? {
+    int? classStartMaybe = clientBal.indexOf("public isolated client class Client {");
+    int classStart = classStartMaybe is int ? classStartMaybe : -1;
+    if classStart >= 0 {
+        int depth = 0;
+        boolean opened = false;
+        int classEnd = -1;
+        foreach int i in classStart ..< clientBal.length() {
+            string ch = clientBal.substring(i, i + 1);
+            if ch == "{" {
+                depth += 1;
+                opened = true;
+            } else if ch == "}" {
+                depth -= 1;
+                if opened && depth == 0 {
+                    classEnd = i;
+                    break;
+                }
+            }
+        }
+
+        if classEnd > classStart {
+            string classBlock = clientBal.substring(classStart, classEnd + 1);
+            if classBlock.includes("= @java:Method") {
+                return error("clientBal contains @java:Method external declarations inside Client class; move them to module-level functions outside the class");
+            }
+        }
+    }
+
+    boolean callsNativeInit = clientBal.includes("nativeInit(self, ") ||
+        clientBal.includes("nativeInit(self,") ||
+        clientBal.includes(" return nativeInit(");
+
+    if callsNativeInit {
+        boolean hasNativeInitDecl = clientBal.includes("function nativeInit(");
+        boolean nativeInitBoundToJavaInit = clientBal.includes("name: \"init\"");
+        if !hasNativeInitDecl || !nativeInitBoundToJavaInit {
+            return error("clientBal has native init call but is missing matching external nativeInit declaration bound to Java method 'init'");
+        }
+    }
+}
+
+function normalizeClientInteropDeclarations(string clientBal) returns string {
+    string[] lines = regex:split(clientBal, "\n");
+    string[] normalizedLines = [];
+    string[] moduleLevelExterns = [];
+
+    boolean inClientClass = false;
+    int classDepth = 0;
+    int i = 0;
+    while i < lines.length() {
+        string line = lines[i];
+        string trimmed = line.trim();
+
+        if !inClientClass && trimmed.includes("client class Client") && trimmed.endsWith("{") {
+            inClientClass = true;
+            classDepth = 1;
+            normalizedLines.push(line);
+            i += 1;
+            continue;
+        }
+
+        if inClientClass && trimmed.includes("= @java:Method") && trimmed.includes("function ") {
+            string signature = line.substring(0, <int>line.indexOf("= @java:Method")).trim();
+            string methodName = extractFunctionName(signature);
+            string nativeFunctionName = methodName == "init" ? "nativeInit" : string `native${capitalizeFirst(methodName)}`;
+            string paramSegment = extractParamSegment(signature);
+            string returnType = extractReturnType(signature);
+            string[] paramDecls = splitSignatureParameters(paramSegment);
+
+            string[] wrapperArgNames = [];
+            string[] moduleParamDecls = ["Client bClient"];
+            foreach string paramDeclRaw in paramDecls {
+                string paramDecl = paramDeclRaw.trim();
+                if paramDecl.length() == 0 {
+                    continue;
+                }
+                wrapperArgNames.push(extractParamName(paramDecl));
+                moduleParamDecls.push(normalizeExternalParamDecl(paramDecl));
+            }
+
+            string indent = extractIndent(line);
+            string wrapperArgs = wrapperArgNames.length() > 0
+                ? string `self, ${string:'join(", ", ...wrapperArgNames)}`
+                : "self";
+            normalizedLines.push(string `${indent}${signature} {`);
+            if returnType == "()" {
+                normalizedLines.push(string `${indent}    ${nativeFunctionName}(${wrapperArgs});`);
+                normalizedLines.push(string `${indent}    return;`);
+            } else {
+                normalizedLines.push(string `${indent}    return ${nativeFunctionName}(${wrapperArgs});`);
+            }
+            normalizedLines.push(string `${indent}}`);
+
+            string[] annotationBlock = [];
+            int j = i;
+            while j < lines.length() {
+                string annLine = lines[j];
+                annotationBlock.push(annLine.trim());
+                if annLine.trim().endsWith("} external;") {
+                    break;
+                }
+                j += 1;
+            }
+
+            string annotationInline = string:'join(" ", ...annotationBlock);
+            if annotationInline.startsWith(signature) {
+                annotationInline = annotationInline.substring(signature.length()).trim();
+            }
+            if !annotationInline.startsWith("= @java:Method") {
+                annotationInline = string `= @java:Method {${annotationInline}`;
+            }
+
+            string moduleSignature = string `function ${nativeFunctionName}(${string:'join(", ", ...moduleParamDecls)}) returns ${returnType}`;
+            moduleLevelExterns.push(string `${moduleSignature} ${annotationInline}`);
+
+            i = j + 1;
+            continue;
+        }
+
+        normalizedLines.push(line);
+
+        if inClientClass {
+            classDepth += countChar(line, "{");
+            classDepth -= countChar(line, "}");
+            if classDepth <= 0 {
+                inClientClass = false;
+            }
+        }
+
+        i += 1;
+    }
+
+    string normalized = string:'join("\n", ...normalizedLines);
+    if moduleLevelExterns.length() == 0 {
+        return normalized;
+    }
+
+    return string `${normalized}\n\n${string:'join("\n\n", ...moduleLevelExterns)}\n`;
+}
+
+type ClientDocMap record {| 
+    string[] classDoc;
+    map<string[]> methodDocs;
+|};
+
+function applyClientDocsFromApiSpec(string clientBal, string apiSpecText) returns string {
+    ClientDocMap docs = extractClientDocsFromApiSpec(apiSpecText);
+    if docs.classDoc.length() == 0 && docs.methodDocs.keys().length() == 0 {
+        return clientBal;
+    }
+
+    string[] lines = regex:split(clientBal, "\n");
+    string[] output = [];
+    boolean inClientClass = false;
+    int classDepth = 0;
+    int i = 0;
+
+    while i < lines.length() {
+        string line = lines[i];
+        string trimmed = line.trim();
+
+        if !inClientClass {
+            if trimmed.startsWith("#") {
+                int? nextIndex = nextNonEmptyLineIndex(lines, i + 1);
+                if nextIndex is int {
+                    string nextTrimmed = lines[<int>nextIndex].trim();
+                    if nextTrimmed == "public isolated client class Client {" {
+                        i += 1;
+                        continue;
+                    }
+                }
+            }
+
+            if trimmed == "public isolated client class Client {" {
+                foreach string docLine in docs.classDoc {
+                    output.push(docLine);
+                }
+                output.push(line);
+                inClientClass = true;
+                classDepth = 1;
+                i += 1;
+                continue;
+            }
+
+            output.push(line);
+            i += 1;
+            continue;
+        }
+
+        if trimmed.startsWith("#") {
+            i += 1;
+            continue;
+        }
+
+        string? methodName = extractClientMethodName(trimmed);
+        if methodName is string {
+            string[]? methodDoc = docs.methodDocs.get(<string>methodName);
+            if methodDoc is string[] {
+                string indent = extractIndent(line);
+                foreach string docLine in <string[]>methodDoc {
+                    output.push(string `${indent}${docLine}`);
+                }
+            }
+        }
+
+        output.push(line);
+
+        classDepth += countChar(line, "{");
+        classDepth -= countChar(line, "}");
+        if classDepth <= 0 {
+            inClientClass = false;
+            classDepth = 0;
+        }
+
+        i += 1;
+    }
+
+    return string:'join("\n", ...output);
+}
+
+function extractClientDocsFromApiSpec(string apiSpecText) returns ClientDocMap {
+    ClientDocMap out = {
+        classDoc: [],
+        methodDocs: {}
+    };
+
+    string[] lines = regex:split(apiSpecText, "\n");
+    int classLineIndex = -1;
+    foreach int idx in 0 ..< lines.length() {
+        if lines[idx].trim() == "public isolated client class Client {" {
+            classLineIndex = idx;
+            break;
+        }
+    }
+
+    if classLineIndex < 0 {
+        return out;
+    }
+
+    string[] classDoc = collectDocBlockAbove(lines, classLineIndex);
+    if classDoc.length() > 0 {
+        out.classDoc = classDoc;
+    }
+
+    int depth = 0;
+    boolean entered = false;
+    int i = classLineIndex;
+    while i < lines.length() {
+        string line = lines[i];
+        string trimmed = line.trim();
+
+        depth += countChar(line, "{");
+        if countChar(line, "{") > 0 {
+            entered = true;
+        }
+
+        if entered && depth == 0 {
+            break;
+        }
+
+        string? methodName = extractClientMethodName(trimmed);
+        if methodName is string {
+            string[] methodDoc = collectDocBlockAbove(lines, i);
+            if methodDoc.length() > 0 {
+                out.methodDocs[<string>methodName] = methodDoc;
+            }
+        }
+
+        depth -= countChar(line, "}");
+        i += 1;
+    }
+
+    return out;
+}
+
+function collectDocBlockAbove(string[] lines, int lineIndex) returns string[] {
+    string[] reversed = [];
+    int i = lineIndex - 1;
+    boolean started = false;
+
+    while i >= 0 {
+        string trimmed = lines[i].trim();
+        if trimmed.startsWith("#") {
+            reversed.push(trimmed);
+            started = true;
+            i -= 1;
+            continue;
+        }
+
+        if started && trimmed.length() == 0 {
+            i -= 1;
+            continue;
+        }
+        break;
+    }
+
+    if reversed.length() == 0 {
+        return [];
+    }
+
+    return reversed.reverse();
+}
+
+function extractClientMethodName(string trimmedLine) returns string? {
+    if trimmedLine.startsWith("public isolated function init(") {
+        return "init";
+    }
+    if !trimmedLine.startsWith("remote isolated function ") {
+        return;
+    }
+
+    int nameStart = 25;
+    int? paren = trimmedLine.indexOf("(");
+    if paren is () || <int>paren <= nameStart {
+        return;
+    }
+
+    return trimmedLine.substring(nameStart, <int>paren).trim();
+}
+
+function nextNonEmptyLineIndex(string[] lines, int fromIndex) returns int? {
+    int i = fromIndex;
+    while i < lines.length() {
+        if lines[i].trim().length() > 0 {
+            return i;
+        }
+        i += 1;
+    }
+    return;
+}
+
+function extractIndent(string line) returns string {
+    int i = 0;
+    while i < line.length() {
+        string ch = line.substring(i, i + 1);
+        if ch != " " && ch != "\t" {
+            return line.substring(0, i);
+        }
+        i += 1;
+    }
+    return "";
+}
+
+function extractFunctionName(string signature) returns string {
+    int? fnIndex = signature.indexOf("function ");
+    if fnIndex is () {
+        return "native";
+    }
+    int startIndex = <int>fnIndex + 9;
+    int? end = signature.indexOf("(");
+    if end is () || <int>end <= startIndex {
+        return "native";
+    }
+    return signature.substring(startIndex, <int>end).trim();
+}
+
+function extractParamSegment(string signature) returns string {
+    int? startIndex = signature.indexOf("(");
+    int? end = signature.indexOf(") returns ");
+    if startIndex is () || end is () || <int>end <= <int>startIndex {
+        return "";
+    }
+    return signature.substring(<int>startIndex + 1, <int>end).trim();
+}
+
+function extractReturnType(string signature) returns string {
+    int? returnsIndex = signature.indexOf(") returns ");
+    if returnsIndex is () {
+        return "error?";
+    }
+    return signature.substring(<int>returnsIndex + 10).trim();
+}
+
+function extractParamName(string paramDecl) returns string {
+    string p = paramDecl.trim();
+    if p.startsWith("*") {
+        p = p.substring(1).trim();
+    }
+    int? eqIndex = p.indexOf("=");
+    if eqIndex is int {
+        p = p.substring(0, eqIndex).trim();
+    }
+    int? lastSpace = p.lastIndexOf(" ");
+    if lastSpace is () {
+        return p;
+    }
+    return p.substring(<int>lastSpace + 1).trim();
+}
+
+function normalizeExternalParamDecl(string paramDecl) returns string {
+    string p = paramDecl.trim();
+    if p.startsWith("*") {
+        p = p.substring(1).trim();
+    }
+    int? eqIndex = p.indexOf("=");
+    if eqIndex is int {
+        p = p.substring(0, eqIndex).trim();
+    }
+    return p;
+}
+
+function capitalizeFirst(string value) returns string {
+    if value.length() == 0 {
+        return value;
+    }
+    string first = value.substring(0, 1).toUpperAscii();
+    return value.length() == 1 ? first : string `${first}${value.substring(1)}`;
+}
+
+function countChar(string value, string ch) returns int {
+    int count = 0;
+    foreach int i in 0 ..< value.length() {
+        if value.substring(i, i + 1) == ch {
+            count += 1;
+        }
+    }
+    return count;
+}
+
+function normalizeNativeAdaptorWarnings(string nativeAdaptorJava) returns string {
+    string normalized = nativeAdaptorJava;
+    normalized = replaceAllLiteral(normalized, "WithStrings(", "(");
+    normalized = replaceAllLiteral(normalized, "catch (Exception e)", "catch (RuntimeException e)");
+    return normalized;
+}
+
+function validateNativeWarningPatterns(string nativeAdaptorJava) returns error? {
+    if nativeAdaptorJava.includes("WithStrings(") {
+        return error("nativeAdaptorJava contains potentially deprecated '*WithStrings(...)' method usage; use non-deprecated alternatives");
+    }
+    if nativeAdaptorJava.includes("catch (Exception e)") {
+        return error("nativeAdaptorJava contains broad catch(Exception e); use more specific catches or multi-catch");
+    }
+}
+
+function replaceAllLiteral(string inputText, string needle, string replacement) returns string {
+    if needle.length() == 0 || !inputText.includes(needle) {
+        return inputText;
+    }
+
+    string out = "";
+    int cursor = 0;
+    while cursor < inputText.length() {
+        int? hit = inputText.substring(cursor).indexOf(needle);
+        if hit is () {
+            out += inputText.substring(cursor);
+            break;
+        }
+        int absolute = cursor + <int>hit;
+        out += inputText.substring(cursor, absolute);
+        out += replacement;
+        cursor = absolute + needle.length();
+    }
+    return out;
+}
+
+function validateNativeTypeImports(string nativeAdaptorJava) returns error? {
+    boolean hasRuntimeTypeImport = nativeAdaptorJava.includes("import io.ballerina.runtime.api.types.Type;");
+    boolean hasModelTypeImport = false;
+    string[] lines = regex:split(nativeAdaptorJava, "\n");
+    foreach string line in lines {
+        string trimmed = line.trim();
+        if trimmed.startsWith("import ") && trimmed.endsWith(".model.Type;") {
+            hasModelTypeImport = true;
+            break;
+        }
+    }
+
+    if hasRuntimeTypeImport && hasModelTypeImport {
+        return error("nativeAdaptorJava has ambiguous Type imports: runtime Type and model.Type imported together");
     }
 }
 
@@ -492,7 +1060,7 @@ public function printConnectorUsage() {
     io:println();
     io:println("EXAMPLE:");
     io:println("  bal run -- connector path/to/metadata.json " +
-        "path/to/ir.json " +
-        "path/to/api_spec.bal ./output --fix-code");
+            "path/to/ir.json " +
+            "path/to/api_spec.bal ./output --fix-code");
     io:println();
 }

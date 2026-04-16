@@ -12,7 +12,7 @@ public function parseApiSpec(string apiSpecPath) returns ParsedApiSpec|error {
         return error("API spec does not contain Client class");
     }
 
-    string headerAndTypes = content.substring(0, <int>classIdx).trim();
+    string headerAndTypes = stripTrailingClientDocLines(content.substring(0, <int>classIdx));
     string clientBlock = content.substring(<int>classIdx);
 
     SpecMethodSignature[] methods = [];
@@ -31,6 +31,27 @@ public function parseApiSpec(string apiSpecPath) returns ParsedApiSpec|error {
         headerAndTypes: headerAndTypes,
         clientMethods: methods
     };
+}
+
+function stripTrailingClientDocLines(string headerAndTypes) returns string {
+    string[] lines = regex:split(headerAndTypes, "\n");
+    int endExclusive = lines.length();
+
+    while endExclusive > 0 {
+        string trimmed = lines[endExclusive - 1].trim();
+        if trimmed.length() == 0 || trimmed.startsWith("#") || trimmed.startsWith("//") ||
+                trimmed.startsWith("+") {
+            endExclusive -= 1;
+            continue;
+        }
+        break;
+    }
+
+    if endExclusive <= 0 {
+        return "";
+    }
+
+    return string:'join("\n", ...lines.slice(0, endExclusive)).trim();
 }
 
 function parseMethodSignature(string line) returns SpecMethodSignature|error {

@@ -20,14 +20,15 @@ import ballerina/regex;
 #
 # + cls - Class to score
 # + allClasses - All classes for context
+# + roleHint - Optional target role hint (admin/producer/consumer)
 # + return - LLM client score based on LLM analysis
-public function calculateLLMClientScore(ClassInfo cls, ClassInfo[] allClasses) returns LLMClientScore|error {
+public function calculateLLMClientScore(ClassInfo cls, ClassInfo[] allClasses, string? roleHint = ()) returns LLMClientScore|error {
     // Enforce LLM-only scoring: call the Anthropic LLM and return its score.
     if !isAnthropicConfigured() {
         return error("Anthropic LLM not configured: LLM-only scoring required");
     }
 
-    LLMClientScore|error llmScore = callLLMForClientScoring(cls, allClasses);
+    LLMClientScore|error llmScore = callLLMForClientScoring(cls, allClasses, roleHint);
     if llmScore is LLMClientScore {
         return llmScore;
     }
@@ -39,73 +40,74 @@ public function calculateLLMClientScore(ClassInfo cls, ClassInfo[] allClasses) r
 #
 # + cls - Class to evaluate
 # + allClasses - All classes in JAR
+# + roleHint - Optional target role hint (admin/producer/consumer)
 # + return - Score from LLM or error
-function callLLMForClientScoring(ClassInfo cls, ClassInfo[] allClasses) returns LLMClientScore|error {
-    string systemPrompt = getClientScoringSystemPrompt();
+function callLLMForClientScoring(ClassInfo cls, ClassInfo[] allClasses, string? roleHint = ()) returns LLMClientScore|error {
+    string systemPrompt = getClientScoringSystemPrompt(roleHint);
     string classInfo = formatClassInfoForLLM(cls);
-    string userPrompt = getClientScoringUserPrompt(classInfo);
+    string userPrompt = getClientScoringUserPrompt(classInfo, roleHint);
 
     json|error response = callAnthropicAPI(check getAnthropicConfig(), systemPrompt, userPrompt);
-    
+
     if response is error {
         return response;
     }
-    
-        // Extract text from Anthropic API response structure: response.content[0].text
-        string responseText = "";
-        
-        // response.content is a json array of content blocks
-        json|error contentArray = response.content;
-        if contentArray is json && contentArray is json[] {
-            json[] contentList = <json[]>contentArray;
-            if contentList.length() > 0 {
-                json firstContent = contentList[0];
-                // Access text field from the first content block
-                json|error textField = firstContent.text;
-                if textField is json && textField is string {
-                    responseText = textField.toString();
-                } else if textField is json {
-                    responseText = textField.toString();
-                }
+
+    // Extract text from Anthropic API response structure: response.content[0].text
+    string responseText = "";
+
+    // response.content is a json array of content blocks
+    json|error contentArray = response.content;
+    if contentArray is json && contentArray is json[] {
+        json[] contentList = <json[]>contentArray;
+        if contentList.length() > 0 {
+            json firstContent = contentList[0];
+            // Access text field from the first content block
+            json|error textField = firstContent.text;
+            if textField is json && textField is string {
+                responseText = textField.toString();
+            } else if textField is json {
+                responseText = textField.toString();
             }
         }
-        
-        if responseText == "" {
-            // Last resort fallback
-            responseText = response.toString();
-        }
-        
-        // Try to parse "SCORE:XX" format
-        string[] matches = regex:split(responseText, "\\|");
-        if matches.length() > 0 {
-            string scoreStr = matches[0];
-            if scoreStr.includes("SCORE:") {
-                string[] parts = regex:split(scoreStr, ":");
-                if parts.length() > 1 {
-                    int|error parsedScore = int:fromString(parts[1].trim());
-                    if parsedScore is int {
-                        decimal score = <decimal>parsedScore;
-                        if score > 100.0d {
-                            score = 100.0d;
-                        } else if score < 0.0d {
-                            score = 0.0d;
-                        }
-                        
-                        string reason = matches.length() > 1 ? matches[1] : "LLM analysis";
-                        
-                        return {
-                            publicApiScore: score * 0.3d,
-                            operationCoverage: score * 0.25d,
-                            hasRequestResponseTypes: score * 0.20d,
-                            stabilityScore: score * 0.15d,
-                            exampleUsageScore: score * 0.10d,
-                            totalScore: score,
-                            breakdown: string `LLM Analysis:\n${reason}`
-                        };
+    }
+
+    if responseText == "" {
+        // Last resort fallback
+        responseText = response.toString();
+    }
+
+    // Try to parse "SCORE:XX" format
+    string[] matches = regex:split(responseText, "\\|");
+    if matches.length() > 0 {
+        string scoreStr = matches[0];
+        if scoreStr.includes("SCORE:") {
+            string[] parts = regex:split(scoreStr, ":");
+            if parts.length() > 1 {
+                int|error parsedScore = int:fromString(parts[1].trim());
+                if parsedScore is int {
+                    decimal score = <decimal>parsedScore;
+                    if score > 100.0d {
+                        score = 100.0d;
+                    } else if score < 0.0d {
+                        score = 0.0d;
                     }
+
+                    string reason = matches.length() > 1 ? matches[1] : "LLM analysis";
+
+                    return {
+                        publicApiScore: score * 0.3d,
+                        operationCoverage: score * 0.25d,
+                        hasRequestResponseTypes: score * 0.20d,
+                        stabilityScore: score * 0.15d,
+                        exampleUsageScore: score * 0.10d,
+                        totalScore: score,
+                        breakdown: string `LLM Analysis:\n${reason}`
+                    };
                 }
             }
         }
-    
+    }
+
     return error("Failed to parse LLM response for client scoring");
 }

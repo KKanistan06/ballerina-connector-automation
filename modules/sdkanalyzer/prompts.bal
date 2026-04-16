@@ -15,23 +15,37 @@
 
 # System prompt for client class scoring
 #
+# + roleHint - Optional target role hint (admin/producer/consumer)
 # + return - System prompt for evaluating client classes
-public function getClientScoringSystemPrompt() returns string {
+public function getClientScoringSystemPrompt(string? roleHint = ()) returns string {
+    string roleDirective = "";
+    if roleHint is string {
+        roleDirective = string ` Prioritize classes that best match the target client role: ${roleHint}.`;
+    }
+
     return string `You are an expert Java SDK analyzer. Your task is to evaluate if a Java class is likely
         to be the root/main client class for an SDK. Analyze class characteristics and provide a score from 0-100.
         Use your knowledge of SDK design patterns and conventions to identify the primary client interface that developers would use.
+        ${roleDirective}
         Return your response in format: SCORE:XX|REASON:your explanation`;
 }
 
 # User prompt for client class scoring
 #
 # + classInfo - Formatted class information
+# + roleHint - Optional target role hint (admin/producer/consumer)
 # + return - User prompt for evaluating a specific class
-public function getClientScoringUserPrompt(string classInfo) returns string {
+public function getClientScoringUserPrompt(string classInfo, string? roleHint = ()) returns string {
+    string roleBlock = "";
+    if roleHint is string {
+        roleBlock = string `\nTarget role hint: ${roleHint}\nGive higher scores to classes that represent this role while still being a primary SDK client entry point.`;
+    }
+
     return string `
 Evaluate this Java class as a potential root SDK client class:
 
 ${classInfo}
+${roleBlock}
 
 Analyze the class structure and provide a numeric score 0-100 based on your knowledge of:
 - SDK design patterns and naming conventions
@@ -66,12 +80,12 @@ public function getInitPatternSystemPrompt() returns string {
 # + isInterface - Whether class is an interface
 # + return - User prompt for pattern detection
 public function getInitPatternUserPrompt(
-    string simpleName,
-    string packageName,
-    string constructorDetails,
-    string staticMethodInfo,
-    int totalMethods,
-    boolean isInterface
+        string simpleName,
+        string packageName,
+        string constructorDetails,
+        string staticMethodInfo,
+        int totalMethods,
+        boolean isInterface
 ) returns string {
     return "Analyze this Java SDK client class and determine the RECOMMENDED instantiation pattern:\n\n" +
         "Class: " + simpleName + "\n" +
@@ -151,10 +165,10 @@ public function getParameterFieldAnalysisSystemPrompt() returns string {
 # + parameterInfo - Formatted parameter and field information
 # + return - User prompt for field analysis
 public function getParameterFieldAnalysisUserPrompt(
-    string sdkName,
-    string sdkVersion,
-    string methodName,
-    string parameterInfo
+        string sdkName,
+        string sdkVersion,
+        string methodName,
+        string parameterInfo
 ) returns string {
     return string `Analyze the following method parameter fields from ${sdkName} version ${sdkVersion}.
 
@@ -202,10 +216,10 @@ public function getMethodDescriptionSystemPrompt() returns string {
 # + methodSignature - Method signature with types
 # + return - User prompt for method description
 public function getMethodDescriptionUserPrompt(
-    string sdkName,
-    string sdkVersion,
-    string methodName,
-    string methodSignature
+        string sdkName,
+        string sdkVersion,
+        string methodName,
+        string methodSignature
 ) returns string {
     return string `Generate documentation for this ${sdkName} v${sdkVersion} method.
 
@@ -360,9 +374,9 @@ public function getConnectionFieldEnrichmentSystemPrompt() returns string {
 # + fields - All connection fields collected by collectBuilderSetters
 # + return - User prompt ready for callAnthropicAPI
 public function getConnectionFieldEnrichmentUserPrompt(
-    string sdkPackage,
-    string clientSimpleName,
-    ConnectionFieldInfo[] fields
+        string sdkPackage,
+        string clientSimpleName,
+        ConnectionFieldInfo[] fields
 ) returns string {
     string header = "SDK package: " + sdkPackage + "\n" +
         "Client: " + clientSimpleName + "\n\n" +

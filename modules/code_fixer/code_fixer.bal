@@ -186,11 +186,18 @@ public function parseJavaCompilationErrors(string stderr, string projectPath = "
             }
 
             string fullMessage = messagePart;
-            if i + 1 < lines.length() {
-                string nextLine = lines[i + 1].trim();
+            int lookahead = i + 1;
+            int consumed = 0;
+            while lookahead < lines.length() && consumed < 6 {
+                string nextLine = lines[lookahead].trim();
                 if nextLine.startsWith("symbol:") || nextLine.startsWith("location:") {
                     fullMessage = string `${fullMessage} | ${nextLine}`;
                 }
+                if nextLine.length() > 0 && nextLine.endsWith("error:") {
+                    break;
+                }
+                lookahead += 1;
+                consumed += 1;
             }
 
             string normalizedFilePath = normalizeDiagnosticPath(filePath, projectPath);
@@ -275,6 +282,27 @@ function isBackupArtifactPath(string path) returns boolean {
     return lower.includes("_backup.") || lower.endsWith(".backup") || lower.endsWith(".bak");
 }
 
+function isEligibleBallerinaSourcePath(string path) returns boolean {
+    string lower = path.toLowerAscii();
+    if !lower.endsWith(".bal") {
+        return false;
+    }
+    if isBackupArtifactPath(lower) {
+        return false;
+    }
+    if lower.startsWith("target/") || lower.includes("/target/") || lower.startsWith("build/") ||
+        lower.includes("/build/") {
+        return false;
+    }
+    return lower.endsWith("client.bal") || lower.endsWith("types.bal") || lower.endsWith("main.bal");
+}
+
+function isInteropClassNotFoundError(CompilationError err) returns boolean {
+    string message = err.message.toUpperAscii();
+    return message.includes("CLASS_NOT_FOUND") || message.includes("'ORG.BALLERINAX") ||
+        message.includes("JBALLERINA.JAVA");
+}
+
 function executeShellCommand(string workingDir, string shellCommand) returns record {|int exitCode; string stdout; string stderr;|}|error {
     string stdoutFile = ".code_fixer.stdout.log";
     string stderrFile = ".code_fixer.stderr.log";
@@ -283,9 +311,9 @@ function executeShellCommand(string workingDir, string shellCommand) returns rec
 
     string command = string `cd "${workingDir}" && ${shellCommand} > "${stdoutFile}" 2> "${stderrFile}"`;
     os:Process process = check os:exec({
-        value: "bash",
-        arguments: ["-c", command]
-    });
+                                           value: "bash",
+                                           arguments: ["-c", command]
+                                       });
 
     int exitCode = check process.waitForExit();
 
@@ -352,7 +380,7 @@ function runGradleBuild(string projectPath, boolean quietMode = true)
 }
 
 public function fixJavaNativeAdaptorErrors(string projectPath, boolean quietMode = true, boolean autoYes = true,
-    int iterationLimit = maxIterations)
+        int iterationLimit = maxIterations)
         returns FixResult|BallerinaFixerError {
     if !isAIServiceInitialized() {
         error? initResult = initAIService(quietMode);
@@ -368,6 +396,11 @@ public function fixJavaNativeAdaptorErrors(string projectPath, boolean quietMode
         appliedFixes: [],
         remainingFixes: []
     };
+
+    error? preCleanupError = cleanupFixerBackups(projectPath, quietMode);
+    if preCleanupError is error && !quietMode {
+        io:println(string `  ⚠  Failed to clean stale backup files before Java fixing: ${preCleanupError.message()}`);
+    }
 
     int iteration = 1;
     CompilationError[] previousErrors = [];
@@ -485,9 +518,15 @@ public function fixJavaNativeAdaptorErrors(string projectPath, boolean quietMode
         } else {
             result.errorsRemaining = remainingErrors.length();
             result.javaErrorsRemaining = remainingErrors.length();
-            result.errorsFixed = initialErrorCountSet ? initialErrorCount - remainingErrors.length() : 0;
+            int fixedCount = initialErrorCountSet ? initialErrorCount - remainingErrors.length() : 0;
+            result.errorsFixed = fixedCount > 0 ? fixedCount : 0;
             result.javaErrorsFixed = result.errorsFixed;
         }
+    }
+
+    error? postCleanupError = cleanupFixerBackups(projectPath, quietMode);
+    if postCleanupError is error && !quietMode {
+        io:println(string `  ⚠  Failed to clean backup files after Java fixing: ${postCleanupError.message()}`);
     }
 
     return result;
@@ -575,16 +614,75 @@ public function fixFileWithLLM(string projectPath, string filePath, CompilationE
         return fileContent;
     }
 
-    // Create language-specific fix prompt
-    string prompt;
     string language = inferErrorLanguage(errors);
     if language == "java" {
-        prompt = createJavaFixPrompt(fileContent, errors, filePath);
-    } else {
-        prompt = createFixPrompt(fileContent, errors, filePath);
+        int attempt = 1;
+        int maxJavaAttempts = 3;
+        string lastCandidate = "";
+        error lastValidationError = error("Java fix validation failed");
+
+        while attempt <= maxJavaAttempts {
+            string prompt = attempt == 1
+                ? createJavaFixPrompt(fileContent, errors, filePath)
+                : createJavaRetryFixPrompt(fileContent, errors, filePath, lastValidationError.message(), lastCandidate,
+                    attempt);
+
+            string|error llmResponse = callAI(prompt);
+            if llmResponse is error {
+                if !quietMode {
+                    io:println(string `  ✗ AI failed to generate fix for ${filePath}`);
+                }
+                return error(string `LLM failed to generate fix: ${llmResponse.message()}`);
+            }
+
+            string normalizedResponse = normalizeCodeResponse(llmResponse);
+            error? javaValidationError = validateJavaFixCandidate(fileContent, normalizedResponse, filePath,
+                errors.length());
+            if javaValidationError is () {
+                if !quietMode {
+                    io:println(string `  ✓ Generated fix for ${filePath}`);
+                }
+                return {
+                    success: true,
+                    fixedCode: normalizedResponse,
+                    explanation: "Fixed using AI"
+                };
+            }
+
+            string|() localizedCandidate = applyLocalizedJavaMerge(fileContent, normalizedResponse, errors);
+            if localizedCandidate is string {
+                error? localizedValidationError = validateJavaFixCandidate(fileContent, <string>localizedCandidate,
+                    filePath, errors.length());
+                if localizedValidationError is () {
+                    if !quietMode {
+                        io:println(string `  ✓ Generated localized Java fix for ${filePath}`);
+                    }
+                    return {
+                        success: true,
+                        fixedCode: <string>localizedCandidate,
+                        explanation: "Fixed using AI (localized merge)"
+                    };
+                }
+                lastValidationError = <error>localizedValidationError;
+            } else {
+                lastValidationError = <error>javaValidationError;
+            }
+
+            lastCandidate = normalizedResponse;
+            if !quietMode && attempt < maxJavaAttempts {
+                io:println(string `  ⚠  Rejected unsafe Java rewrite for ${filePath}; retrying (${attempt + 1}/${maxJavaAttempts})`);
+            }
+            attempt += 1;
+        }
+
+        if !quietMode {
+            io:println(string `  ✗ Rejected unsafe Java rewrite for ${filePath}`);
+        }
+        return lastValidationError;
     }
 
-    // Get fix from LLM using centralized service
+    string prompt = createFixPrompt(fileContent, errors, filePath);
+
     string|error llmResponse = callAI(prompt);
     if llmResponse is error {
         if !quietMode {
@@ -594,16 +692,6 @@ public function fixFileWithLLM(string projectPath, string filePath, CompilationE
     }
 
     string normalizedResponse = normalizeCodeResponse(llmResponse);
-
-    if language == "java" {
-        error? javaValidationError = validateJavaFixCandidate(fileContent, normalizedResponse, filePath);
-        if javaValidationError is error {
-            if !quietMode {
-                io:println(string `  ✗ Rejected unsafe Java rewrite for ${filePath}`);
-            }
-            return javaValidationError;
-        }
-    }
 
     if !quietMode {
         io:println(string `  ✓ Generated fix for ${filePath}`);
@@ -649,7 +737,7 @@ function normalizeCodeResponse(string responseText) returns string {
     return string:'join("\n", ...bodyLines).trim();
 }
 
-function validateJavaFixCandidate(string originalCode, string fixedCode, string filePath) returns error? {
+function validateJavaFixCandidate(string originalCode, string fixedCode, string filePath, int errorCount = 1) returns error? {
     if fixedCode.trim().length() == 0 {
         return error(string `LLM produced empty Java content for ${filePath}`);
     }
@@ -685,6 +773,93 @@ function validateJavaFixCandidate(string originalCode, string fixedCode, string 
     if !fixedCode.trim().endsWith("}") {
         return error(string `LLM output appears incomplete at file end for ${filePath}`);
     }
+
+    int changedLineCount = countChangedLineCount(originalCode, fixedCode);
+    int maxAllowedChanges = errorCount * 12;
+    if maxAllowedChanges < 24 {
+        maxAllowedChanges = 24;
+    }
+    if changedLineCount > maxAllowedChanges {
+        return error(string `LLM output changed too many lines (${changedLineCount}) for ${filePath}`);
+    }
+}
+
+function countChangedLineCount(string originalCode, string fixedCode) returns int {
+    string[] originalLines = regexp:split(re `\n`, originalCode);
+    string[] fixedLines = regexp:split(re `\n`, fixedCode);
+
+    int maxLineCount = originalLines.length();
+    if fixedLines.length() > maxLineCount {
+        maxLineCount = fixedLines.length();
+    }
+
+    int changedLines = 0;
+    foreach int i in 0 ..< maxLineCount {
+        string originalLine = i < originalLines.length() ? originalLines[i] : "";
+        string fixedLine = i < fixedLines.length() ? fixedLines[i] : "";
+        if originalLine != fixedLine {
+            changedLines += 1;
+        }
+    }
+
+    return changedLines;
+}
+
+function applyLocalizedJavaMerge(string originalCode, string candidateCode, CompilationError[] errors,
+        int windowRadius = 4) returns string|() {
+    if candidateCode.trim().length() == 0 {
+        return;
+    }
+
+    string[] originalLines = regexp:split(re `\n`, originalCode);
+    string[] candidateLines = regexp:split(re `\n`, candidateCode);
+    if candidateLines.length() == 0 {
+        return;
+    }
+
+    string[] mergedLines = originalLines.clone();
+    boolean changed = false;
+    int maxLineCount = mergedLines.length();
+    if candidateLines.length() > maxLineCount {
+        maxLineCount = candidateLines.length();
+    }
+
+    foreach CompilationError err in errors {
+        int errorLine = err.line;
+        if errorLine <= 0 {
+            continue;
+        }
+
+        int startLine = errorLine - windowRadius;
+        if startLine < 1 {
+            startLine = 1;
+        }
+
+        int endLine = errorLine + windowRadius;
+        if endLine > maxLineCount {
+            endLine = maxLineCount;
+        }
+
+        foreach int lineNum in startLine ... endLine {
+            int index = lineNum - 1;
+            string candidateLine = index < candidateLines.length() ? candidateLines[index] : "";
+            if index < mergedLines.length() {
+                if mergedLines[index] != candidateLine {
+                    mergedLines[index] = candidateLine;
+                    changed = true;
+                }
+            } else if index == mergedLines.length() && candidateLine.length() > 0 {
+                mergedLines.push(candidateLine);
+                changed = true;
+            }
+        }
+    }
+
+    if !changed {
+        return;
+    }
+
+    return string:'join("\n", ...mergedLines);
 }
 
 function hasBalancedJavaBraces(string sourceCode) returns boolean {
@@ -797,13 +972,30 @@ function getBackupPath(string fullFilePath) returns string {
         int dotIndex = <int>lastDot;
         string base = fullFilePath.substring(0, dotIndex);
         string ext = fullFilePath.substring(dotIndex);
-        if ext == ".java" {
-            return string `${base}_backup${ext}.bak`;
-        }
-        return string `${base}_backup${ext}`;
+        return string `${base}_backup${ext}.bak`;
     }
 
-    return fullFilePath + "_backup";
+    return fullFilePath + "_backup.bak";
+}
+
+function cleanupFixerBackups(string projectPath, boolean quietMode = true) returns error? {
+    record {|int exitCode; string stdout; string stderr;|}|error cleanupResult =
+        executeShellCommand(projectPath, "find . -type f -name '*_backup*' -print -delete");
+    if cleanupResult is error {
+        return cleanupResult;
+    }
+
+    if cleanupResult.exitCode != 0 {
+        return error(string `backup cleanup failed: ${cleanupResult.stderr.trim()}`);
+    }
+
+    if !quietMode {
+        string deleted = cleanupResult.stdout.trim();
+        if deleted.length() > 0 {
+            io:println("  Removed stale backup artifacts:");
+            io:println(deleted);
+        }
+    }
 }
 
 // Main function to fix all errors in a project
@@ -824,6 +1016,11 @@ public function fixAllErrors(string projectPath, boolean quietMode = true, boole
         remainingFixes: []
     };
 
+    error? preCleanupError = cleanupFixerBackups(projectPath, quietMode);
+    if preCleanupError is error && !quietMode {
+        io:println(string `  ⚠  Failed to clean stale backup files before Ballerina fixing: ${preCleanupError.message()}`);
+    }
+
     int iteration = 1;
     CompilationError[] previousErrors = [];
     int initialErrorCount = 0;
@@ -841,7 +1038,7 @@ public function fixAllErrors(string projectPath, boolean quietMode = true, boole
 
         // Build the project and get diagnostics
         record {|boolean success; string stdout; string stderr;|}|error buildResultOrError = executeBalBuild(projectPath,
-            quietMode);
+                quietMode);
         if buildResultOrError is error {
             return error BallerinaFixerError("Failed to execute bal build", buildResultOrError);
         }
@@ -866,7 +1063,31 @@ public function fixAllErrors(string projectPath, boolean quietMode = true, boole
         }
 
         // Parse errors from build output
-        CompilationError[] currentErrors = parseCompilationErrors(buildResult.stderr);
+        string diagnostics = string `${buildResult.stderr}\n${buildResult.stdout}`;
+        CompilationError[] parsedErrors = parseCompilationErrors(diagnostics);
+        CompilationError[] currentErrors = [];
+        foreach CompilationError parsedError in parsedErrors {
+            if isEligibleBallerinaSourcePath(parsedError.filePath) {
+                currentErrors.push(parsedError);
+            }
+        }
+
+        if currentErrors.length() > 0 {
+            boolean allInteropErrors = true;
+            foreach CompilationError currentError in currentErrors {
+                if !isInteropClassNotFoundError(currentError) {
+                    allInteropErrors = false;
+                    break;
+                }
+            }
+
+            if allInteropErrors {
+                result.success = false;
+                result.errorsRemaining = currentErrors.length();
+                result.remainingFixes.push("Ballerina errors are interop CLASS_NOT_FOUND errors from missing/failed Java native build; skipping .bal AI rewrite");
+                return result;
+            }
+        }
 
         if currentErrors.length() == 0 {
             result.success = true;
@@ -1021,7 +1242,7 @@ public function fixAllErrors(string projectPath, boolean quietMode = true, boole
     }
 
     record {|boolean success; string stdout; string stderr;|}|error finalBuildResultOrError = executeBalBuild(projectPath,
-        true); // Always quiet for final check
+            true); // Always quiet for final check
     if finalBuildResultOrError is error {
         return error BallerinaFixerError("Failed to execute final bal build", finalBuildResultOrError);
     }
@@ -1036,9 +1257,17 @@ public function fixAllErrors(string projectPath, boolean quietMode = true, boole
             io:println("✓ Final build successful - all errors resolved!");
         }
     } else {
-        CompilationError[] remainingErrors = parseCompilationErrors(finalBuildResult.stderr);
+        string finalDiagnostics = string `${finalBuildResult.stderr}\n${finalBuildResult.stdout}`;
+        CompilationError[] parsedRemainingErrors = parseCompilationErrors(finalDiagnostics);
+        CompilationError[] remainingErrors = [];
+        foreach CompilationError parsedError in parsedRemainingErrors {
+            if isEligibleBallerinaSourcePath(parsedError.filePath) {
+                remainingErrors.push(parsedError);
+            }
+        }
         result.errorsRemaining = remainingErrors.length();
-        result.errorsFixed = initialErrorCount - remainingErrors.length();
+        int fixedCount = initialErrorCount - remainingErrors.length();
+        result.errorsFixed = fixedCount > 0 ? fixedCount : 0;
 
         if !quietMode {
             io:println(string `⚠  ${remainingErrors.length()} error${remainingErrors.length() == 1 ? "" : "s"} still remain`);
@@ -1049,6 +1278,11 @@ public function fixAllErrors(string projectPath, boolean quietMode = true, boole
                 }
             }
         }
+    }
+
+    error? postCleanupError = cleanupFixerBackups(projectPath, quietMode);
+    if postCleanupError is error && !quietMode {
+        io:println(string `  ⚠  Failed to clean backup files after Ballerina fixing: ${postCleanupError.message()}`);
     }
 
     // Print summary

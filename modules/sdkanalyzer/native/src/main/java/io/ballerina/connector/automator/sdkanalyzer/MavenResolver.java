@@ -76,9 +76,54 @@ public class MavenResolver {
      * @return BMap containing jarPath and dependency paths
      */
     public static Object resolveMavenArtifact(BString coordinate) {
+        return resolveMavenArtifactInternal(coordinate, 3, false, true);
+    }
+
+    /**
+     * Resolve Maven coordinate with options.
+     *
+     * Supported options:
+     * - maxDepth (int): recursive dependency resolution depth
+     * - offlineMode (boolean): skip network resolution when true
+     * - resolveDependencies (boolean): download only main artifact when false
+     */
+    public static Object resolveMavenArtifactWithOptions(BString coordinate, BMap<BString, Object> options) {
+        int maxDepth = 3;
+        boolean offlineMode = false;
+        boolean resolveDependencies = true;
+
+        if (options != null) {
+            Object maxDepthObj = options.get(StringUtils.fromString("maxDepth"));
+            if (maxDepthObj instanceof Long depthLong) {
+                maxDepth = depthLong.intValue();
+            } else if (maxDepthObj instanceof Integer depthInt) {
+                maxDepth = depthInt;
+            }
+
+            Object offlineModeObj = options.get(StringUtils.fromString("offlineMode"));
+            if (offlineModeObj instanceof Boolean offline) {
+                offlineMode = offline;
+            }
+
+            Object resolveDepsObj = options.get(StringUtils.fromString("resolveDependencies"));
+            if (resolveDepsObj instanceof Boolean resolveDeps) {
+                resolveDependencies = resolveDeps;
+            }
+        }
+
+        return resolveMavenArtifactInternal(coordinate, maxDepth, offlineMode, resolveDependencies);
+    }
+
+    private static Object resolveMavenArtifactInternal(BString coordinate, int maxDepth, boolean offlineMode,
+                                                       boolean resolveDependencies) {
         try {
             String coord = coordinate.getValue();
             System.err.println("INFO: Resolving Maven coordinate: " + coord);
+
+            if (offlineMode) {
+                return ErrorCreator.createError(StringUtils.fromString(
+                        "Offline mode enabled: Maven artifact resolution requires network access"));
+            }
             
             // Parse coordinate
             String[] parts = coord.split(":");
@@ -115,10 +160,13 @@ public class MavenResolver {
             // Create cache directory
             Path cacheDir = Files.createTempDirectory("maven-cache-");
             System.err.println("INFO: Using cache directory: " + cacheDir);
+
+            int effectiveMaxDepth = Math.max(0, maxDepth);
             
             // Download main JAR and dependencies
             List<String> allJars = downloadArtifactWithDependencies(
-                groupId, artifactId, version, DEFAULT_MAVEN_CENTRAL, cacheDir, new HashSet<>(), 0);
+                groupId, artifactId, version, DEFAULT_MAVEN_CENTRAL, cacheDir, new HashSet<>(), 0,
+                effectiveMaxDepth, resolveDependencies);
             
             if (allJars.isEmpty()) {
                 return ErrorCreator.createError(StringUtils.fromString(
@@ -134,6 +182,21 @@ public class MavenResolver {
             result.put(StringUtils.fromString("groupId"), StringUtils.fromString(groupId));
             result.put(StringUtils.fromString("artifactId"), StringUtils.fromString(artifactId));
             result.put(StringUtils.fromString("version"), StringUtils.fromString(version));
+
+            // Try to download matching javadoc JAR for richer metadata extraction
+            String groupPath = groupId.replace('.', '/');
+            String javadocFileName = artifactId + "-" + version + "-javadoc.jar";
+            String javadocUrl = String.format("%s/%s/%s/%s/%s",
+                    DEFAULT_MAVEN_CENTRAL, groupPath, artifactId, version, javadocFileName);
+            Path javadocPath = cacheDir.resolve(javadocFileName);
+            try {
+                downloadFile(javadocUrl, javadocPath.toFile());
+                result.put(StringUtils.fromString("javadocJar"), StringUtils.fromString(javadocPath.toString()));
+                result.put(StringUtils.fromString("javadocPath"), StringUtils.fromString(javadocPath.toString()));
+                System.err.println("INFO: Downloaded javadoc JAR: " + javadocPath);
+            } catch (Exception ignored) {
+                // Javadoc may not exist for all artifacts; proceed without failing analysis
+            }
             
             // Add all JAR paths as array
             BString[] jarPaths = allJars.stream()
@@ -154,13 +217,14 @@ public class MavenResolver {
      */
     private static List<String> downloadArtifactWithDependencies(
             String groupId, String artifactId, String version, 
-            String baseUrl, Path cacheDir, Set<String> visited, int depth) throws Exception {
+            String baseUrl, Path cacheDir, Set<String> visited, int depth,
+            int maxDepth, boolean resolveDependencies) throws Exception {
         
         List<String> jars = new ArrayList<>();
         String key = groupId + ":" + artifactId + ":" + version;
         
         // Avoid cycles and limit depth
-        if (visited.contains(key) || depth > 3) {
+        if (visited.contains(key) || depth > maxDepth) {
             return jars;
         }
         visited.add(key);
@@ -180,8 +244,8 @@ public class MavenResolver {
             return jars;
         }
         
-        // Download and parse POM for dependencies (only if depth < 3)
-        if (depth < 3) {
+        // Download and parse POM for dependencies
+        if (resolveDependencies && depth < maxDepth) {
             List<Dependency> dependencies = new ArrayList<>();
 
             // Add critical AWS SDK dependencies even if POM parsing fails
@@ -207,8 +271,8 @@ public class MavenResolver {
                 }
             }
 
-            // Download and parse POM for dependencies (only if depth < 3)
-            if (depth < 3) {
+            // Download and parse POM for dependencies
+            if (depth < maxDepth) {
                 try {
                     String pomFileName = artifactId + "-" + version + ".pom";
                     String pomUrl = String.format("%s/%s/%s/%s/%s",
@@ -224,7 +288,9 @@ public class MavenResolver {
                         if (dep.version != null && !dep.version.startsWith("$")) {
                             boolean exists = false;
                             for (Dependency existing : dependencies) {
-                                if (existing.groupId.equals(dep.groupId) && existing.artifactId.equals(dep.artifactId)) {
+                                if (existing.groupId.equals(dep.groupId)
+                                        && existing.artifactId.equals(dep.artifactId)
+                                        && existing.version.equals(dep.version)) {
                                     exists = true;
                                     break;
                                 }
@@ -245,7 +311,7 @@ public class MavenResolver {
                     if (!dep.optional && dep.version != null && !dep.version.startsWith("$")) {
                         List<String> depJars = downloadArtifactWithDependencies(
                             dep.groupId, dep.artifactId, dep.version, 
-                            baseUrl, cacheDir, visited, depth + 1);
+                            baseUrl, cacheDir, visited, depth + 1, maxDepth, resolveDependencies);
                         jars.addAll(depJars);
                     } else if (dep.version == null || dep.version.startsWith("$")) {
                         System.err.println("WARNING: Skipping dependency with unresolved version: " + 
@@ -263,7 +329,7 @@ public class MavenResolver {
      */
     private static void addIfMissing(List<Dependency> dependencies, String groupId, String artifactId, String version) {
         for (Dependency dep : dependencies) {
-            if (dep.groupId.equals(groupId) && dep.artifactId.equals(artifactId)) {
+            if (dep.groupId.equals(groupId) && dep.artifactId.equals(artifactId) && dep.version.equals(version)) {
                 return; // Already exists
             }
         }
@@ -301,8 +367,8 @@ public class MavenResolver {
         // First, extract properties for version resolution
         Map<String, String> properties = new HashMap<>();
         NodeList propertiesList = doc.getElementsByTagName("properties");
-        if (propertiesList.getLength() > 0) {
-            Element propertiesElement = (Element) propertiesList.item(0);
+        for (int p = 0; p < propertiesList.getLength(); p++) {
+            Element propertiesElement = (Element) propertiesList.item(p);
             NodeList propertyNodes = propertiesElement.getChildNodes();
             for (int i = 0; i < propertyNodes.getLength(); i++) {
                 Node node = propertyNodes.item(i);
@@ -313,9 +379,15 @@ public class MavenResolver {
         }
         
         // Also check for version in parent or project
-        NodeList versionList = doc.getElementsByTagName("version");
-        if (versionList.getLength() > 0) {
-            String projectVersion = versionList.item(0).getTextContent().trim();
+        Element root = doc.getDocumentElement();
+        String projectVersion = getDirectChildText(root, "version");
+        if (projectVersion == null) {
+            Element parentEl = getDirectChildElement(root, "parent");
+            if (parentEl != null) {
+                projectVersion = getDirectChildText(parentEl, "version");
+            }
+        }
+        if (projectVersion != null && !projectVersion.isBlank()) {
             properties.put("project.version", projectVersion);
             properties.put("awsjavasdk.version", projectVersion);  // Common AWS SDK property
         }
@@ -324,44 +396,47 @@ public class MavenResolver {
         properties.putIfAbsent("awscrt.version", "0.38.3");
         properties.putIfAbsent("reactive-streams.version", "1.0.4");
         properties.putIfAbsent("eventstream.version", "1.0.1");
-        
-        // Add hardcoded fallback versions for common properties not in POM
-        properties.putIfAbsent("awscrt.version", "0.38.3");
-        properties.putIfAbsent("reactive-streams.version", "1.0.4");
-        properties.putIfAbsent("eventstream.version", "1.0.1");
+
+        // Resolve nested property references where possible
+        for (Map.Entry<String, String> entry : properties.entrySet()) {
+            String resolved = resolvePropertyValue(entry.getValue(), properties, 0);
+            if (resolved != null && !resolved.isBlank()) {
+                entry.setValue(resolved);
+            }
+        }
         
         // Get dependencies element
         NodeList dependenciesList = doc.getElementsByTagName("dependencies");
         if (dependenciesList.getLength() == 0) {
             return dependencies;
         }
-        
-        Element dependenciesElement = (Element) dependenciesList.item(0);
-        NodeList dependencyList = dependenciesElement.getElementsByTagName("dependency");
-        
-        for (int i = 0; i < dependencyList.getLength(); i++) {
-            Node dependencyNode = dependencyList.item(i);
-            if (dependencyNode.getNodeType() == Node.ELEMENT_NODE) {
-                Element depElement = (Element) dependencyNode;
-                
-                Dependency dep = new Dependency();
-                dep.groupId = getElementText(depElement, "groupId");
-                dep.artifactId = getElementText(depElement, "artifactId");
-                dep.version = getElementText(depElement, "version");
-                dep.scope = getElementText(depElement, "scope", "compile");
-                dep.optional = Boolean.parseBoolean(getElementText(depElement, "optional", "false"));
-                
-                // Resolve version properties
-                if (dep.version != null && dep.version.startsWith("${") && dep.version.endsWith("}")) {
-                    String propName = dep.version.substring(2, dep.version.length() - 1);
-                    String resolvedVersion = properties.get(propName);
-                    if (resolvedVersion != null) {
-                        dep.version = resolvedVersion;
+
+        Set<String> seen = new HashSet<>();
+        for (int d = 0; d < dependenciesList.getLength(); d++) {
+            Element dependenciesElement = (Element) dependenciesList.item(d);
+            NodeList dependencyList = dependenciesElement.getElementsByTagName("dependency");
+
+            for (int i = 0; i < dependencyList.getLength(); i++) {
+                Node dependencyNode = dependencyList.item(i);
+                if (dependencyNode.getNodeType() == Node.ELEMENT_NODE) {
+                    Element depElement = (Element) dependencyNode;
+
+                    Dependency dep = new Dependency();
+                    dep.groupId = getElementText(depElement, "groupId");
+                    dep.artifactId = getElementText(depElement, "artifactId");
+                    dep.version = getElementText(depElement, "version");
+                    dep.scope = getElementText(depElement, "scope", "compile");
+                    dep.optional = Boolean.parseBoolean(getElementText(depElement, "optional", "false"));
+
+                    // Resolve version properties
+                    dep.version = resolvePropertyValue(dep.version, properties, 0);
+
+                    if (dep.groupId != null && dep.artifactId != null) {
+                        String dedupeKey = dep.groupId + ":" + dep.artifactId + ":" + dep.version + ":" + dep.scope;
+                        if (seen.add(dedupeKey)) {
+                            dependencies.add(dep);
+                        }
                     }
-                }
-                
-                if (dep.groupId != null && dep.artifactId != null) {
-                    dependencies.add(dep);
                 }
             }
         }
@@ -620,7 +695,8 @@ public class MavenResolver {
                     
                     // Download the artifact and its dependencies
                     List<String> downloaded = downloadArtifactWithDependencies(
-                            groupId, artifactId, version, DEFAULT_MAVEN_CENTRAL, cacheDir, new HashSet<>(), 0);
+                            groupId, artifactId, version, DEFAULT_MAVEN_CENTRAL, cacheDir, new HashSet<>(), 0,
+                            3, true);
                     jars.addAll(downloaded);
                 }
             }
@@ -646,5 +722,42 @@ public class MavenResolver {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static String resolvePropertyValue(String value, Map<String, String> properties, int depth) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        if (depth > 5) {
+            return value;
+        }
+        if (value.startsWith("${") && value.endsWith("}")) {
+            String propName = value.substring(2, value.length() - 1);
+            String resolved = properties.get(propName);
+            if (resolved == null) {
+                return value;
+            }
+            return resolvePropertyValue(resolved, properties, depth + 1);
+        }
+        return value;
+    }
+
+    private static Element getDirectChildElement(Element parent, String tagName) {
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node node = children.item(i);
+            if (node.getNodeType() == Node.ELEMENT_NODE && tagName.equals(node.getNodeName())) {
+                return (Element) node;
+            }
+        }
+        return null;
+    }
+
+    private static String getDirectChildText(Element parent, String tagName) {
+        Element child = getDirectChildElement(parent, tagName);
+        if (child == null) {
+            return null;
+        }
+        return child.getTextContent().trim();
     }
 }

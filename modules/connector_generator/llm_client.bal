@@ -41,7 +41,7 @@ public function getAnthropicConfig(int maxTokens, boolean enableExtendedThinking
 public function callAnthropicAPI(AnthropicConfig config, string systemPrompt,
         string userPrompt) returns json|error {
     http:Client anthropicClient = check new ("https://api.anthropic.com", {
-        timeout: 1000
+        timeout: 240000
     });
 
     map<json> bodyMap = {

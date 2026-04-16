@@ -23,10 +23,10 @@ import ballerina/os;
 function isPrimitiveType(string typeName) returns boolean {
     string lower = typeName.toLowerAscii();
     return lower == "int" || lower == "long" || lower == "float" || lower == "double" ||
-           lower == "boolean" || lower == "byte" || lower == "char" || lower == "short" ||
-           lower == "string" || lower == "java.lang.string" || lower == "java.lang.object" ||
-           lower == "void" || lower == "java.lang.integer" || lower == "java.lang.long" ||
-           lower == "java.lang.boolean" || lower == "java.lang.double";
+            lower == "boolean" || lower == "byte" || lower == "char" || lower == "short" ||
+            lower == "string" || lower == "java.lang.string" || lower == "java.lang.object" ||
+            lower == "void" || lower == "java.lang.integer" || lower == "java.lang.long" ||
+            lower == "java.lang.boolean" || lower == "java.lang.double";
 }
 
 # Check if a type is a standard Java library type (java.*, javax.*) that doesn't need a typeReference.
@@ -50,7 +50,7 @@ function findOrResolveClass(string className, ClassInfo[] resolvedClasses, strin
     if found is ClassInfo {
         return found;
     }
-    
+
     // Try to resolve from dependency JARs
     if dependencyJarPaths.length() > 0 {
         ClassInfo? resolved = resolveClassFromJars(className, dependencyJarPaths);
@@ -60,7 +60,7 @@ function findOrResolveClass(string className, ClassInfo[] resolvedClasses, strin
             return resolved;
         }
     }
-    
+
     return ();
 }
 
@@ -70,7 +70,7 @@ function findOrResolveClass(string className, ClassInfo[] resolvedClasses, strin
 # + return - List of enum constants as RequestFieldInfo
 function extractEnumConstants(ClassInfo enumClass) returns RequestFieldInfo[] {
     RequestFieldInfo[] constants = [];
-    
+
     foreach FieldInfo fld in enumClass.fields {
         // Enum constants are static final fields of the enum type itself
         if fld.isStatic && fld.isFinal {
@@ -78,23 +78,23 @@ function extractEnumConstants(ClassInfo enumClass) returns RequestFieldInfo[] {
             if fld.name.startsWith("$") || fld.name == "UNKNOWN_TO_SDK_VERSION" {
                 continue;
             }
-            
+
             RequestFieldInfo constInfo = {
                 name: fld.name,
                 typeName: enumClass.simpleName,
                 fullType: enumClass.className,
                 isRequired: false
             };
-            
+
             // Add javadoc description if available
             if fld.javadoc != () {
                 constInfo.description = fld.javadoc;
             }
-            
+
             constants.push(constInfo);
         }
     }
-    
+
     return constants;
 }
 
@@ -118,7 +118,7 @@ function buildLevel1Context(ClassInfo cls) returns string {
         string[] constants = [];
         foreach FieldInfo fld in cls.fields {
             if fld.isStatic && fld.isFinal && !fld.name.startsWith("$") &&
-               fld.name != "UNKNOWN_TO_SDK_VERSION" {
+                fld.name != "UNKNOWN_TO_SDK_VERSION" {
                 constants.push(fld.name);
                 if constants.length() >= 8 {
                     break;
@@ -132,8 +132,17 @@ function buildLevel1Context(ClassInfo cls) returns string {
     }
 
     string[] methodNames = [];
-    string[] skipNames = ["toString", "hashCode", "equals", "getClass", "notify",
-                          "notifyAll", "wait", "clone", "finalize"];
+    string[] skipNames = [
+        "toString",
+        "hashCode",
+        "equals",
+        "getClass",
+        "notify",
+        "notifyAll",
+        "wait",
+        "clone",
+        "finalize"
+    ];
     foreach MethodInfo m in cls.methods {
         boolean skip = false;
         foreach string s in skipNames {
@@ -183,9 +192,9 @@ function printConnectionEnrichLog(string message) {
 # + clientSimpleName - The simple name of the client
 # + return - The enriched connection fields and synthetic type metadata
 function enrichConnectionFieldsWithLLM(
-    ConnectionFieldInfo[] fields,
-    string sdkPackage,
-    string clientSimpleName
+        ConnectionFieldInfo[] fields,
+        string sdkPackage,
+        string clientSimpleName
 ) returns [ConnectionFieldInfo[], SyntheticTypeMetadata[]] {
 
     SyntheticTypeMetadata[] syntheticMeta = [];
@@ -199,6 +208,28 @@ function enrichConnectionFieldsWithLLM(
         return [fields, syntheticMeta];
     }
 
+    // Only enrich fields that could not be resolved from classes/JARs.
+    // Resolved fields already have deterministic metadata and should not generate synthetic type metadata.
+    ConnectionFieldInfo[] llmCandidates = [];
+    foreach ConnectionFieldInfo f in fields {
+        string level1Context = "";
+        if f.level1Context is string {
+            level1Context = <string>f.level1Context;
+        }
+        boolean hasResolvedContext = level1Context.trim().length() > 0;
+        boolean hasTypeRef = f.typeReference is string && (<string>f.typeReference).trim().length() > 0;
+        boolean hasEnumRef = f.enumReference is string && (<string>f.enumReference).trim().length() > 0;
+
+        if !hasResolvedContext && (hasTypeRef || hasEnumRef) {
+            llmCandidates.push(f);
+        }
+    }
+
+    if llmCandidates.length() == 0 {
+        printConnectionEnrichLog("All connection fields resolved from classes/JARs — skipping LLM enrichment");
+        return [fields, syntheticMeta];
+    }
+
     AnthropicConfiguration|error llmConfigResult = getAnthropicConfig();
     if llmConfigResult is error {
         printConnectionEnrichLog(string `Cannot get LLM config: ${llmConfigResult.message()}`);
@@ -207,9 +238,9 @@ function enrichConnectionFieldsWithLLM(
     AnthropicConfiguration llmConfig = llmConfigResult;
 
     string systemPrompt = getConnectionFieldEnrichmentSystemPrompt();
-    string userPrompt = getConnectionFieldEnrichmentUserPrompt(sdkPackage, clientSimpleName, fields);
+    string userPrompt = getConnectionFieldEnrichmentUserPrompt(sdkPackage, clientSimpleName, llmCandidates);
 
-    printConnectionEnrichLog(string `Enriching ${fields.length()} connection fields via LLM...`);
+    printConnectionEnrichLog(string `Enriching ${llmCandidates.length()} unresolved connection fields via LLM...`);
 
     json|error response = callAnthropicAPI(llmConfig, systemPrompt, userPrompt);
     if response is error {
@@ -270,6 +301,20 @@ function enrichConnectionFieldsWithLLM(
     ConnectionFieldInfo[] result = [];
 
     foreach ConnectionFieldInfo f in fields {
+        string level1Context = "";
+        if f.level1Context is string {
+            level1Context = <string>f.level1Context;
+        }
+        boolean hasResolvedContext = level1Context.trim().length() > 0;
+        boolean hasTypeRef = f.typeReference is string && (<string>f.typeReference).trim().length() > 0;
+        boolean hasEnumRef = f.enumReference is string && (<string>f.enumReference).trim().length() > 0;
+        boolean needsLlm = !hasResolvedContext && (hasTypeRef || hasEnumRef);
+
+        if !needsLlm {
+            result.push(f);
+            continue;
+        }
+
         map<json>? enrichment = enrichmentMap[f.name];
 
         if enrichment is () {
@@ -351,7 +396,7 @@ function enrichConnectionFieldsWithLLM(
             }
 
         } else if (ballerinaType == "record" || ballerinaType == "object") &&
-                   newTypeRef is string {
+                    newTypeRef is string {
             string typeRefKey = <string>newTypeRef;
             RequestFieldInfo[] syntheticSubFields = [];
             json subFieldsJson = e["subFields"];
@@ -410,7 +455,7 @@ function enrichConnectionFieldsWithLLM(
         enrichedCount += 1;
     }
 
-    printConnectionEnrichLog(string `Enriched ${enrichedCount}/${fields.length()} fields; ` +
-               string `${syntheticMeta.length()} synthetic type entries generated`);
+    printConnectionEnrichLog(string `Enriched ${enrichedCount}/${llmCandidates.length()} unresolved fields; ` +
+                string `${syntheticMeta.length()} synthetic type entries generated`);
     return [result, syntheticMeta];
 }

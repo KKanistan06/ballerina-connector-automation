@@ -44,7 +44,7 @@ public function executeSdkAnalyzer(string... args) returns error? {
     }
 
     AnalyzerConfig config = parseCommandLineArgs(actualArgs.slice(3));
-    
+
     // Set the javadoc path from the required argument
     config.javadocPath = javadocJar;
 
@@ -68,7 +68,7 @@ function analyzeSDK(string sdkRef, string outputDir, AnalyzerConfig config) retu
 
     time:Utc endTime = time:utcNow();
     time:Seconds seconds = time:utcDiffSeconds(endTime, startTime);
-    decimal duration = <decimal> seconds;
+    decimal duration = <decimal>seconds;
 
     if result is AnalysisResult {
         if !config.quietMode {
@@ -93,19 +93,19 @@ function parseCommandLineArgs(string[] args) returns AnalyzerConfig {
     while i < args.length() {
         string arg = args[i];
         match arg {
-            "yes" | "--yes" | "-y" => {
+            "yes"|"--yes"|"-y" => {
                 config.autoYes = true;
             }
-            "quiet" | "--quiet" | "-q" => {
+            "quiet"|"--quiet"|"-q" => {
                 config.quietMode = true;
             }
-            "include-deprecated" | "--include-deprecated" => {
+            "include-deprecated"|"--include-deprecated" => {
                 config.includeDeprecated = true;
             }
-            "include-internal" | "--include-internal" => {
+            "include-internal"|"--include-internal" => {
                 config.filterInternal = false;
             }
-            "include-non-public" | "--include-non-public" => {
+            "include-non-public"|"--include-non-public" => {
                 config.includeNonPublic = true;
             }
             "--sources" => {
@@ -122,6 +122,24 @@ function parseCommandLineArgs(string[] args) returns AnalyzerConfig {
                     i = i + 1;
                 }
             }
+            "--client-role-hint" => {
+                if i + 1 < args.length() {
+                    string roleHint = args[i + 1].trim().toLowerAscii();
+                    if roleHint.length() > 0 {
+                        config.clientRoleHint = roleHint;
+                    }
+                    i = i + 1;
+                }
+            }
+            "--client-class-hint" => {
+                if i + 1 < args.length() {
+                    string classHint = args[i + 1].trim();
+                    if classHint.length() > 0 {
+                        config.clientClassHint = classHint;
+                    }
+                    i = i + 1;
+                }
+            }
             _ => {
                 // Handle key=value pairs and --sources=path style
                 if arg.includes("=") {
@@ -131,40 +149,50 @@ function parseCommandLineArgs(string[] args) returns AnalyzerConfig {
                         string value = parts[1].trim();
 
                         match key {
-                            "exclude-packages" | "--exclude-packages" => {
+                            "exclude-packages"|"--exclude-packages" => {
                                 if value.length() > 0 {
                                     config.excludePackages = regex:split(value, ",")
                                         .map(pkg => pkg.trim())
                                         .filter(pkg => pkg.length() > 0);
                                 }
                             }
-                            "include-packages" | "--include-packages" => {
+                            "include-packages"|"--include-packages" => {
                                 if value.length() > 0 {
                                     config.includePackages = regex:split(value, ",")
                                         .map(pkg => pkg.trim())
                                         .filter(pkg => pkg.length() > 0);
                                 }
                             }
-                            "max-depth" | "--max-depth" => {
+                            "max-depth"|"--max-depth" => {
                                 int|error depth = int:fromString(value);
                                 if depth is int {
                                     config.maxDependencyDepth = depth;
                                 }
                             }
-                            "methods-to-list" | "--methods-to-list" => {
+                            "methods-to-list"|"--methods-to-list" => {
                                 int|error m = int:fromString(value);
                                 if m is int {
                                     config.methodsToList = m;
                                 }
                             }
-                            "sources" | "--sources" => {
+                            "sources"|"--sources" => {
                                 if value.length() > 0 {
                                     config.sourcesPath = value;
                                 }
                             }
-                            "javadoc" | "--javadoc" => {
+                            "javadoc"|"--javadoc" => {
                                 if value.length() > 0 {
                                     config.javadocPath = value;
+                                }
+                            }
+                            "client-role-hint"|"--client-role-hint" => {
+                                if value.length() > 0 {
+                                    config.clientRoleHint = value.toLowerAscii();
+                                }
+                            }
+                            "client-class-hint"|"--client-class-hint" => {
+                                if value.length() > 0 {
+                                    config.clientClassHint = value;
                                 }
                             }
                             _ => {
@@ -215,6 +243,9 @@ function printUsage() {
     io:println("  include-deprecated    Include deprecated methods/classes");
     io:println("  exclude-packages=     Comma-separated packages to exclude");
     io:println("  methods-to-list=N     Number of top-ranked methods to include (default: 5)");
+    io:println("  --client-role-hint=   Prefer a client role (admin/producer/consumer)");
+    io:println("  --client-class-hint=  Force selecting a specific client class");
+    io:println("  client detection is automatic for single-client and multi-client SDKs");
     io:println();
     io:println("EXAMPLES:");
     io:println("  bal run -- analyze ./s3-2.25.16.jar ./s3-2.25.16-javadoc.jar ./output");

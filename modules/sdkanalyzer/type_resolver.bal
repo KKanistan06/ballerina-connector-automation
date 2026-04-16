@@ -60,7 +60,7 @@ public function resolveRequestClassFromParameter(ParameterInfo param, ClassInfo[
         string lower = rawOnly.toLowerAscii();
         if lower.includes("consumer") || lower.includes("function") || lower.includes("supplier") {
             // Generate PascalCase method name
-            string pascal = methodName.substring(0,1).toUpperAscii() + methodName.substring(1);
+            string pascal = methodName.substring(0, 1).toUpperAscii() + methodName.substring(1);
             string guess = pascal + "Request";
             ClassInfo? guessCls = findClassByName(guess, allClasses);
             if guessCls is ClassInfo {
@@ -136,7 +136,9 @@ public function normalizeCandidateTypeNames(string raw) returns string[] {
         if s == "" {
             continue;
         }
-        boolean present = uniq.some(function(string x) returns boolean { return x == s; });
+        boolean present = uniq.some(function(string x) returns boolean {
+            return x == s;
+        });
         if !present {
             uniq.push(s);
         }
@@ -168,8 +170,8 @@ public function extractRequestFields(ClassInfo requestClass) returns RequestFiel
 
     foreach MethodInfo method in requestClass.methods {
         if method.parameters.length() == 0 && method.returnType != "void" &&
-           method.name != "toString" && method.name != "hashCode" &&
-           method.name != "equals" && method.name != "getClass" {
+            method.name != "toString" && method.name != "hashCode" &&
+            method.name != "equals" && method.name != "getClass" {
 
             // Filter out unwanted utility methods
             if shouldFilterField(method.name, method.returnType) {
@@ -214,8 +216,8 @@ public function extractResponseFields(ClassInfo responseClass) returns RequestFi
 
     foreach MethodInfo method in responseClass.methods {
         if method.parameters.length() == 0 && method.returnType != "void" &&
-           method.name != "toString" && method.name != "hashCode" &&
-           method.name != "equals" && method.name != "getClass" {
+            method.name != "toString" && method.name != "hashCode" &&
+            method.name != "equals" && method.name != "getClass" {
 
             if shouldFilterField(method.name, method.returnType) {
                 continue;
@@ -258,7 +260,7 @@ function shouldFilterField(string fieldName, string fieldType) returns boolean {
     if fieldType.endsWith("$Builder") || fieldType.endsWith(".Builder") {
         return true;
     }
-    
+
     // Filter specific utility methods and SDK-internal fields
     string[] filteredNames = [
         "toBuilder",
@@ -267,18 +269,18 @@ function shouldFilterField(string fieldName, string fieldType) returns boolean {
         "sdkFields",
         "sdkFieldNameToField"
     ];
-    
+
     foreach string name in filteredNames {
         if fieldName == name {
             return true;
         }
     }
-    
+
     // Filter fields that start with "sdk" (SDK-internal fields)
     if fieldName.startsWith("sdk") {
         return true;
     }
-    
+
     // Filter has* checker methods (hasAttributes, hasTags, etc.)
     if fieldName.startsWith("has") && fieldName.length() > 3 {
         string afterHas = fieldName.substring(3, 4);
@@ -287,23 +289,23 @@ function shouldFilterField(string fieldName, string fieldType) returns boolean {
             return true;
         }
     }
-    
+
     // Filter java.lang.Class type
     if fieldType == "java.lang.Class" {
         return true;
     }
-    
+
     // Filter types containing SdkField (SDK-internal metadata)
     if fieldType.includes("SdkField") {
         return true;
     }
-    
+
     // Filter types containing SdkBytes-related internal fields
     if fieldType.includes("software.amazon.awssdk.core.") && !fieldType.includes("SdkBytes") {
         // Allow SdkBytes but filter other SDK core types
         return true;
     }
-    
+
     return false;
 }
 
@@ -315,14 +317,14 @@ function extractSimpleTypeName(string fullTypeName) returns string {
     if fullTypeName == "" {
         return "";
     }
-    
+
     // Handle generic types - extract the base type before the angle bracket
     string baseType = fullTypeName;
     int? angleBracket = fullTypeName.indexOf("<");
     if angleBracket is int && angleBracket >= 0 {
         baseType = fullTypeName.substring(0, angleBracket);
     }
-    
+
     int? lastDot = baseType.lastIndexOf(".");
     if lastDot is int && lastDot >= 0 {
         return baseType.substring(lastDot + 1);
@@ -338,14 +340,14 @@ public function extractGenericTypeParameter(string fullTypeName) returns string?
     if fullTypeName == "" {
         return ();
     }
-    
+
     // Look for angle brackets indicating generic types
     int? openBracket = fullTypeName.indexOf("<");
     int? closeBracket = fullTypeName.lastIndexOf(">");
-    
+
     if openBracket is int && closeBracket is int && openBracket < closeBracket {
         string genericPart = fullTypeName.substring(openBracket + 1, closeBracket);
-        
+
         // For Map types like Map<K, V>, extract the value type (second parameter)
         if genericPart.includes(",") {
             string[] parts = regex:split(genericPart, ",");
@@ -354,11 +356,11 @@ public function extractGenericTypeParameter(string fullTypeName) returns string?
                 return parts[1].trim();
             }
         }
-        
+
         // For single parameter generics like List<T> or Collection<T>
         return genericPart.trim();
     }
-    
+
     return ();
 }
 
@@ -396,10 +398,10 @@ public function extractEnhancedParameters(ParameterInfo[] parameters, ClassInfo[
             // Build a lookup from provided param.requestFields for quick description fallback
             map<string> providedDesc = {};
             if param.requestFields is RequestFieldInfo[] {
-                RequestFieldInfo[] provided = <RequestFieldInfo[]> param.requestFields;
+                RequestFieldInfo[] provided = <RequestFieldInfo[]>param.requestFields;
                 foreach RequestFieldInfo pf in provided {
                     if pf.description != () {
-                        providedDesc[pf.name] = <string> pf.description;
+                        providedDesc[pf.name] = <string>pf.description;
                     }
                 }
             }
@@ -414,7 +416,7 @@ public function extractEnhancedParameters(ParameterInfo[] parameters, ClassInfo[
 
             // If the resolved extraction returned nothing, fall back to the provided fields
             if merged.length() == 0 && param.requestFields is RequestFieldInfo[] {
-                RequestFieldInfo[] provided2 = <RequestFieldInfo[]> param.requestFields;
+                RequestFieldInfo[] provided2 = <RequestFieldInfo[]>param.requestFields;
                 if provided2.length() > 0 {
                     merged = provided2;
                 }
@@ -437,9 +439,9 @@ public function extractEnhancedParameters(ParameterInfo[] parameters, ClassInfo[
 # + return - True if simple type
 public function isSimpleType(string typeName) returns boolean {
     return typeName == "int" || typeName == "long" || typeName == "boolean" ||
-           typeName == "String" || typeName == "double" || typeName == "float" ||
-           typeName == "byte" || typeName == "char" || typeName == "short" ||
-           typeName == "java.lang.String" || typeName == "java.lang.Object";
+            typeName == "String" || typeName == "double" || typeName == "float" ||
+            typeName == "byte" || typeName == "char" || typeName == "short" ||
+            typeName == "java.lang.String" || typeName == "java.lang.Object";
 }
 
 # Extract enum metadata from an enum class
@@ -448,12 +450,27 @@ public function isSimpleType(string typeName) returns boolean {
 # + return - Enum metadata with values
 public function extractEnumMetadata(ClassInfo enumClass) returns EnumMetadata {
     string[] values = [];
+    boolean hasFromValueMethod = hasStringFromValueMethod(enumClass);
 
     // Extract enum constants from static final fields
     // Collect names in declaration order
     foreach FieldInfo fieldInfo in enumClass.fields {
-        if fieldInfo.isStatic && fieldInfo.isFinal && fieldInfo.typeName == enumClass.className {
-            values.push(fieldInfo.name);
+        if fieldInfo.isStatic && fieldInfo.isFinal && isSelfTypedField(fieldInfo, enumClass) {
+            string enumValue = fieldInfo.name;
+            if fieldInfo.literalValue is string {
+                string literalValue = <string>fieldInfo.literalValue;
+                if literalValue.trim().length() > 0 {
+                    enumValue = literalValue;
+                }
+            } else if enumClass.isEnum && hasFromValueMethod && fieldInfo.name != "UNKNOWN_TO_SDK_VERSION" {
+                enumValue = deriveEnumLiteralFromConstant(fieldInfo.name);
+            } else if !enumClass.isEnum && fieldInfo.javadoc is string {
+                string literalValue = <string>fieldInfo.javadoc;
+                if literalValue.trim().length() > 0 {
+                    enumValue = literalValue;
+                }
+            }
+            values.push(enumValue);
         }
     }
 
@@ -494,6 +511,62 @@ public function extractEnumMetadata(ClassInfo enumClass) returns EnumMetadata {
     };
 }
 
+function hasStringFromValueMethod(ClassInfo cls) returns boolean {
+    foreach MethodInfo method in cls.methods {
+        if method.name != "fromValue" {
+            continue;
+        }
+        if method.parameters.length() != 1 {
+            continue;
+        }
+        string paramType = method.parameters[0].typeName;
+        if paramType == "String" || paramType == "java.lang.String" {
+            return true;
+        }
+    }
+    return false;
+}
+
+function deriveEnumLiteralFromConstant(string constantName) returns string {
+    if !constantName.includes("_") {
+        return constantName;
+    }
+
+    string[] parts = regex:split(constantName, "_");
+    string literal = "";
+    foreach string part in parts {
+        if part.length() == 0 {
+            continue;
+        }
+        string lower = part.toLowerAscii();
+        literal += lower.substring(0, 1).toUpperAscii() + lower.substring(1);
+    }
+    return literal.length() > 0 ? literal : constantName;
+}
+
+# Check whether a class contains enum-like constants (static final self-typed fields)
+#
+# + cls - Class information to inspect
+# + return - True if class appears enum-like
+public function hasEnumLikeConstants(ClassInfo cls) returns boolean {
+    int constantCount = 0;
+    foreach FieldInfo fieldInfo in cls.fields {
+        if fieldInfo.isStatic && fieldInfo.isFinal && isSelfTypedField(fieldInfo, cls) {
+            constantCount += 1;
+            if constantCount >= 2 {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function isSelfTypedField(FieldInfo fieldInfo, ClassInfo ownerClass) returns boolean {
+    string typeName = fieldInfo.typeName;
+
+    return typeName == ownerClass.className ||
+            typeName == ownerClass.simpleName;
+}
 
 # Get descriptions for request fields from LLM (only for fields without descriptions)
 #
@@ -503,7 +576,7 @@ public function addRequestFieldDescriptions(RequestFieldInfo[] fields) returns R
     if fields.length() == 0 {
         return fields;
     }
-    
+
     // Identify fields that need descriptions (don't have javadoc descriptions)
     RequestFieldInfo[] needsDescription = [];
     int[] needsDescriptionIndices = [];
@@ -513,40 +586,40 @@ public function addRequestFieldDescriptions(RequestFieldInfo[] fields) returns R
             needsDescriptionIndices.push(i);
         }
     }
-    
+
     // If all fields have descriptions, return as-is
     if needsDescription.length() == 0 {
         return fields;
     }
-    
+
     // If LLM not configured, return fields as-is
     if !isAnthropicConfigured() {
         return fields;
     }
-    
+
     // Build field list for LLM (only fields needing descriptions)
     string fieldList = "";
     foreach int i in 0 ..< needsDescription.length() {
         RequestFieldInfo f = needsDescription[i];
         fieldList = fieldList + (i + 1).toString() + ". " + f.name + " (" + f.typeName + ")\n";
     }
-    
+
     string systemPrompt = string `You are a Java SDK expert. Provide one-line descriptions for the given request fields.
         Each description should clearly explain what the field represents in user-friendly language.
         Return ONLY the descriptions, one per line, in the same order as the input fields.
         Do not include field names or numbers, just pure descriptions.`;
-    
+
     string userPrompt = string `Provide one-line descriptions for these request fields:\n\n" + fieldList
         "\nDescriptions (one per line, in same order):`;
-    
+
     json|error response = callAnthropicAPI(check getAnthropicConfig(), systemPrompt, userPrompt);
-    
+
     if response is json {
         string responseText = extractResponseText(response).trim();
         if responseText != "" {
             string[] descriptions = regex:split(responseText, "\n");
             descriptions = descriptions.map(d => d.trim()).filter(d => d.length() > 0);
-            
+
             // Apply LLM descriptions only to fields that needed them
             RequestFieldInfo[] result = fields.clone();
             foreach int i in 0 ..< needsDescriptionIndices.length() {
@@ -558,7 +631,7 @@ public function addRequestFieldDescriptions(RequestFieldInfo[] fields) returns R
             return result;
         }
     }
-    
+
     // Return fields without descriptions if LLM call fails
     return fields;
 }

@@ -14,24 +14,37 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import ballerina/jballerina.java;
 import ballerina/file;
+import ballerina/jballerina.java;
 
 # Resolve Maven coordinate or local JAR path
 #
 # + sdkRef - Maven coordinate (e.g., "s3:2.25.16") or local JAR path
+# + config - Optional analyzer config for resolution options
 # + return - Resolved JAR information or error
-public function resolveSDKReference(string sdkRef) returns map<json>|error {
+public function resolveSDKReference(string sdkRef, AnalyzerConfig? config = ()) returns map<json>|error {
     // Check if it's a Maven coordinate (contains ':')
     if sdkRef.includes(":") && !sdkRef.includes("/") && !sdkRef.includes("\\") {
         // Maven coordinate
-        json result = resolveMavenArtifact(sdkRef);
-        return <map<json>> result;
+        map<json> options = {
+            maxDepth: 3,
+            offlineMode: false,
+            resolveDependencies: true
+        };
+
+        if config is AnalyzerConfig {
+            options["maxDepth"] = config.maxDependencyDepth;
+            options["offlineMode"] = config.offlineMode;
+            options["resolveDependencies"] = config.resolveDependencies;
+        }
+
+        json result = resolveMavenArtifactWithOptions(sdkRef, options);
+        return <map<json>>result;
     } else {
         // Local JAR path - collect all JARs in the same directory
         // This allows dependency resolution for local JAR analysis
         string[] allJars = [sdkRef];
-        
+
         // Find all other JARs in the same directory (potential dependencies)
         string? parentDir = getParentDirectory(sdkRef);
         if parentDir is string {
@@ -40,15 +53,15 @@ public function resolveSDKReference(string sdkRef) returns map<json>|error {
                 foreach string jarPath in jarFiles {
                     // Don't add the main JAR twice, and skip javadoc/sources JARs
                     string lowerPath = jarPath.toLowerAscii();
-                    if jarPath != sdkRef && 
-                       !lowerPath.includes("javadoc") && 
-                       !lowerPath.includes("sources") {
+                    if jarPath != sdkRef &&
+                        !lowerPath.includes("javadoc") &&
+                        !lowerPath.includes("sources") {
                         allJars.push(jarPath);
                     }
                 }
             }
         }
-        
+
         return {
             "mainJar": sdkRef,
             "allJars": allJars,
@@ -68,7 +81,7 @@ function getParentDirectory(string filePath) returns string? {
     // Find last path separator
     int? lastSlash = filePath.lastIndexOf("/");
     int? lastBackSlash = filePath.lastIndexOf("\\");
-    
+
     int separatorIdx = -1;
     if lastSlash is int && lastSlash >= 0 {
         separatorIdx = lastSlash;
@@ -76,7 +89,7 @@ function getParentDirectory(string filePath) returns string? {
     if lastBackSlash is int && lastBackSlash > separatorIdx {
         separatorIdx = lastBackSlash;
     }
-    
+
     if separatorIdx > 0 {
         return filePath.substring(0, separatorIdx);
     }
@@ -89,7 +102,7 @@ function getParentDirectory(string filePath) returns string? {
 # + return - Array of JAR file paths or error
 function findJarsInDirectory(string dirPath) returns string[]|error {
     string[] jars = [];
-    
+
     file:MetaData[] entries = check file:readDir(dirPath);
     foreach file:MetaData entry in entries {
         string name = entry.absPath;
@@ -97,7 +110,7 @@ function findJarsInDirectory(string dirPath) returns string[]|error {
             jars.push(name);
         }
     }
-    
+
     return jars;
 }
 
@@ -109,30 +122,30 @@ function findJarsInDirectory(string dirPath) returns string[]|error {
 # + return - Array of class information or error
 public function parseJarFromReference(string sdkRef, AnalyzerConfig config) returns ClassInfo[]|error {
     // Resolve the SDK reference (Maven or local)
-    map<json>|error resolvedResult = resolveSDKReference(sdkRef);
-    
+    map<json>|error resolvedResult = resolveSDKReference(sdkRef, config);
+
     if resolvedResult is error {
         return resolvedResult;
     }
-    
+
     map<json> resolved = resolvedResult;
-    
+
     // Pass javadoc path if configured
     if config.javadocPath is string {
         resolved["javadocPath"] = config.javadocPath;
     }
-    
+
     // Call JavaParser-based Java method with resolved result
     json result = analyzeJarWithJavaParserExternal(resolved);
-    
+
     // The native Java method returns a JSON-like array
-    json[] classArray = <json[]> result;
+    json[] classArray = <json[]>result;
 
     ClassInfo[] classes = [];
 
     // Process each class and normalize fields to match Ballerina record types
     foreach json item in classArray {
-        map<json> classMap = <map<json>> item;
+        map<json> classMap = <map<json>>item;
 
         // Compute packageName if missing
         if !classMap.hasKey("packageName") {
@@ -168,9 +181,9 @@ public function parseJarFromReference(string sdkRef, AnalyzerConfig config) retu
 
         // Normalize methods
         if classMap.hasKey("methods") {
-            json[] methods = <json[]> classMap["methods"];
+            json[] methods = <json[]>classMap["methods"];
             foreach json m in methods {
-                map<json> mMap = <map<json>> m;
+                map<json> mMap = <map<json>>m;
                 if !mMap.hasKey("returnType") {
                     mMap["returnType"] = "";
                 }
@@ -203,9 +216,9 @@ public function parseJarFromReference(string sdkRef, AnalyzerConfig config) retu
 
                 // Normalize parameters
                 if mMap.hasKey("parameters") {
-                    json[] params = <json[]> mMap["parameters"];
+                    json[] params = <json[]>mMap["parameters"];
                     foreach json p in params {
-                        map<json> pMap = <map<json>> p;
+                        map<json> pMap = <map<json>>p;
                         // Java producer uses key "type"; our types expect "typeName"
                         if pMap.hasKey("type") && !pMap.hasKey("typeName") {
                             pMap["typeName"] = pMap["type"];
@@ -236,9 +249,9 @@ public function parseJarFromReference(string sdkRef, AnalyzerConfig config) retu
 
         // Normalize fields
         if classMap.hasKey("fields") {
-            json[] flds = <json[]> classMap["fields"];
+            json[] flds = <json[]>classMap["fields"];
             foreach json f in flds {
-                map<json> fMap = <map<json>> f;
+                map<json> fMap = <map<json>>f;
                 if fMap.hasKey("type") && !fMap.hasKey("typeName") {
                     fMap["typeName"] = fMap["type"];
                 }
@@ -264,9 +277,9 @@ public function parseJarFromReference(string sdkRef, AnalyzerConfig config) retu
 
         // Normalize constructors
         if classMap.hasKey("constructors") {
-            json[] ctors = <json[]> classMap["constructors"];
+            json[] ctors = <json[]>classMap["constructors"];
             foreach json c in ctors {
-                map<json> cMap = <map<json>> c;
+                map<json> cMap = <map<json>>c;
                 if !cMap.hasKey("isDeprecated") {
                     cMap["isDeprecated"] = false;
                 }
@@ -274,9 +287,9 @@ public function parseJarFromReference(string sdkRef, AnalyzerConfig config) retu
                     cMap["javadoc"] = null;
                 }
                 if cMap.hasKey("parameters") {
-                    json[] params = <json[]> cMap["parameters"];
+                    json[] params = <json[]>cMap["parameters"];
                     foreach json p in params {
-                        map<json> pMap = <map<json>> p;
+                        map<json> pMap = <map<json>>p;
                         if pMap.hasKey("type") && !pMap.hasKey("typeName") {
                             pMap["typeName"] = pMap["type"];
                         }
@@ -310,18 +323,18 @@ public function parseJarFromReference(string sdkRef, AnalyzerConfig config) retu
         ClassInfo cls = {
             className: classMap.hasKey("className") ? classMap["className"].toString() : "",
             packageName: classMap.hasKey("packageName") ? classMap["packageName"].toString() : "",
-            isInterface: <boolean> classMap["isInterface"],
-            isAbstract: <boolean> classMap["isAbstract"],
-            isEnum: <boolean> classMap["isEnum"],
+            isInterface: <boolean>classMap["isInterface"],
+            isAbstract: <boolean>classMap["isAbstract"],
+            isEnum: <boolean>classMap["isEnum"],
             simpleName: classMap.hasKey("simpleName") ? classMap["simpleName"].toString() : "",
             superClass: classMap.hasKey("superClass") && classMap["superClass"] != () ? classMap["superClass"].toString() : (),
-            interfaces: toStringArray(classMap.hasKey("interfaces") ? <json[]> classMap["interfaces"] : ()),
-            methods: convertMethods(classMap.hasKey("methods") ? <json[]> classMap["methods"] : ()),
-            fields: convertFields(classMap.hasKey("fields") ? <json[]> classMap["fields"] : ()),
-            constructors: convertConstructors(classMap.hasKey("constructors") ? <json[]> classMap["constructors"] : ()),
-            isDeprecated: classMap.hasKey("isDeprecated") ? <boolean> classMap["isDeprecated"] : false,
-            annotations: toStringArray(classMap.hasKey("annotations") ? <json[]> classMap["annotations"] : ()),
-            unresolved: classMap.hasKey("unresolved") ? <boolean> classMap["unresolved"] : false
+            interfaces: toStringArray(classMap.hasKey("interfaces") ? <json[]>classMap["interfaces"] : ()),
+            methods: convertMethods(classMap.hasKey("methods") ? <json[]>classMap["methods"] : ()),
+            fields: convertFields(classMap.hasKey("fields") ? <json[]>classMap["fields"] : ()),
+            constructors: convertConstructors(classMap.hasKey("constructors") ? <json[]>classMap["constructors"] : ()),
+            isDeprecated: classMap.hasKey("isDeprecated") ? <boolean>classMap["isDeprecated"] : false,
+            annotations: toStringArray(classMap.hasKey("annotations") ? <json[]>classMap["annotations"] : ()),
+            unresolved: classMap.hasKey("unresolved") ? <boolean>classMap["unresolved"] : false
         };
         classes.push(cls);
     }
@@ -337,14 +350,14 @@ public function parseJarFromReference(string sdkRef, AnalyzerConfig config) retu
 # + return - ParsedJarResult containing classes and dependency JAR paths, or error
 public function parseJarWithDependencies(string sdkRef, AnalyzerConfig config) returns ParsedJarResult|error {
     // Resolve the SDK reference (Maven or local)
-    map<json>|error resolvedResult = resolveSDKReference(sdkRef);
-    
+    map<json>|error resolvedResult = resolveSDKReference(sdkRef, config);
+
     if resolvedResult is error {
         return resolvedResult;
     }
-    
+
     map<json> resolved = resolvedResult;
-    
+
     // Extract dependency JAR paths
     string[] depJarPaths = [];
     if resolved.hasKey("allJars") {
@@ -355,13 +368,13 @@ public function parseJarWithDependencies(string sdkRef, AnalyzerConfig config) r
             }
         }
     }
-    
+
     // Parse the main classes (reuse existing logic)
     ClassInfo[]|error classesResult = parseJarFromReference(sdkRef, config);
     if classesResult is error {
         return classesResult;
     }
-    
+
     return {
         classes: classesResult,
         dependencyJarPaths: depJarPaths
@@ -428,7 +441,7 @@ function jpGenerateParamNameFromType(string fullType, int index) returns string 
     if simple.length() == 0 {
         return string `arg${index}`;
     }
-    string first = simple.substring(0,1).toLowerAscii();
+    string first = simple.substring(0, 1).toLowerAscii();
     string rest = simple.substring(1);
     return string `${first}${rest}`;
 }
@@ -437,46 +450,46 @@ function jpGenerateParamNameFromType(string fullType, int index) returns string 
 function convertParameters(json[]? params) returns ParameterInfo[] {
     ParameterInfo[] out = [];
     if params is json[] {
-                    foreach json p in params {
-                        map<json> pMap = <map<json>> p;
-                        string tname = pMap.hasKey("typeName") ? pMap["typeName"].toString() : (pMap.hasKey("type") ? pMap["type"].toString() : "");
-                        string pname = pMap.hasKey("name") ? pMap["name"].toString() : "";
-                        // If name missing or looks like a generated arg, generate a better name
-                        if pname == "" || pname.startsWith("arg") {
-                            pname = jpGenerateParamNameFromType(tname, out.length() + 1);
-                        }
+        foreach json p in params {
+            map<json> pMap = <map<json>>p;
+            string tname = pMap.hasKey("typeName") ? pMap["typeName"].toString() : (pMap.hasKey("type") ? pMap["type"].toString() : "");
+            string pname = pMap.hasKey("name") ? pMap["name"].toString() : "";
+            // If name missing or looks like a generated arg, generate a better name
+            if pname == "" || pname.startsWith("arg") {
+                pname = jpGenerateParamNameFromType(tname, out.length() + 1);
+            }
 
-                        RequestFieldInfo[] providedFields = [];
-                        // If native analyzer provided requestFields, convert and preserve them
-                        if pMap.hasKey("requestFields") {
-                            json[] rf = <json[]> pMap["requestFields"];
-                            foreach json rfj in rf {
-                                map<json> rfMap = <map<json>> rfj;
-                                RequestFieldInfo rfi = {
-                                    name: rfMap.hasKey("name") ? rfMap["name"].toString() : "",
-                                    typeName: rfMap.hasKey("type") ? rfMap["type"].toString() : (rfMap.hasKey("typeName") ? rfMap["typeName"].toString() : ""),
-                                    fullType: rfMap.hasKey("fullType") ? rfMap["fullType"].toString() : (rfMap.hasKey("fullType") ? rfMap["fullType"].toString() : ""),
-                                    isRequired: rfMap.hasKey("isRequired") ? <boolean> rfMap["isRequired"] : false
-                                };
-                                if rfMap.hasKey("enumReference") {
-                                    rfi.enumReference = rfMap["enumReference"].toString();
-                                }
-                                if rfMap.hasKey("javadoc") && rfMap["javadoc"] != () {
-                                    rfi.description = rfMap["javadoc"].toString();
-                                } else if rfMap.hasKey("description") && rfMap["description"] != () {
-                                    rfi.description = rfMap["description"].toString();
-                                }
-                                providedFields.push(rfi);
-                            }
-                        }
-
-                        ParameterInfo param = {
-                            name: pname,
-                            typeName: tname,
-                            requestFields: providedFields
-                        };
-                        out.push(param);
+            RequestFieldInfo[] providedFields = [];
+            // If native analyzer provided requestFields, convert and preserve them
+            if pMap.hasKey("requestFields") {
+                json[] rf = <json[]>pMap["requestFields"];
+                foreach json rfj in rf {
+                    map<json> rfMap = <map<json>>rfj;
+                    RequestFieldInfo rfi = {
+                        name: rfMap.hasKey("name") ? rfMap["name"].toString() : "",
+                        typeName: rfMap.hasKey("type") ? rfMap["type"].toString() : (rfMap.hasKey("typeName") ? rfMap["typeName"].toString() : ""),
+                        fullType: rfMap.hasKey("fullType") ? rfMap["fullType"].toString() : (rfMap.hasKey("fullType") ? rfMap["fullType"].toString() : ""),
+                        isRequired: rfMap.hasKey("isRequired") ? <boolean>rfMap["isRequired"] : false
+                    };
+                    if rfMap.hasKey("enumReference") {
+                        rfi.enumReference = rfMap["enumReference"].toString();
                     }
+                    if rfMap.hasKey("javadoc") && rfMap["javadoc"] != () {
+                        rfi.description = rfMap["javadoc"].toString();
+                    } else if rfMap.hasKey("description") && rfMap["description"] != () {
+                        rfi.description = rfMap["description"].toString();
+                    }
+                    providedFields.push(rfi);
+                }
+            }
+
+            ParameterInfo param = {
+                name: pname,
+                typeName: tname,
+                requestFields: providedFields
+            };
+            out.push(param);
+        }
     }
     return out;
 }
@@ -486,20 +499,20 @@ function convertMethods(json[]? methods) returns MethodInfo[] {
     MethodInfo[] out = [];
     if methods is json[] {
         foreach json m in methods {
-            map<json> mMap = <map<json>> m;
+            map<json> mMap = <map<json>>m;
             MethodInfo mi = {
                 name: mMap.hasKey("name") ? mMap["name"].toString() : "",
-                parameters: convertParameters(mMap.hasKey("parameters") ? <json[]> mMap["parameters"] : ()),
+                parameters: convertParameters(mMap.hasKey("parameters") ? <json[]>mMap["parameters"] : ()),
                 returnType: mMap.hasKey("returnType") ? mMap["returnType"].toString() : "",
                 description: mMap.hasKey("javadoc") && mMap["javadoc"] != () ? mMap["javadoc"].toString() : (),
-                exceptions: toStringArray(mMap.hasKey("exceptions") ? <json[]> mMap["exceptions"] : ()),
-                isStatic: mMap.hasKey("isStatic") ? <boolean> mMap["isStatic"] : false,
-                isFinal: mMap.hasKey("isFinal") ? <boolean> mMap["isFinal"] : false,
-                isAbstract: mMap.hasKey("isAbstract") ? <boolean> mMap["isAbstract"] : false,
+                exceptions: toStringArray(mMap.hasKey("exceptions") ? <json[]>mMap["exceptions"] : ()),
+                isStatic: mMap.hasKey("isStatic") ? <boolean>mMap["isStatic"] : false,
+                isFinal: mMap.hasKey("isFinal") ? <boolean>mMap["isFinal"] : false,
+                isAbstract: mMap.hasKey("isAbstract") ? <boolean>mMap["isAbstract"] : false,
                 signature: mMap.hasKey("signature") ? mMap["signature"].toString() : (mMap.hasKey("name") ? mMap["name"].toString() : ""),
-                isDeprecated: mMap.hasKey("isDeprecated") ? <boolean> mMap["isDeprecated"] : false,
-                typeParameters: toStringArray(mMap.hasKey("typeParameters") ? <json[]> mMap["typeParameters"] : ()),
-                annotations: toStringArray(mMap.hasKey("annotations") ? <json[]> mMap["annotations"] : ())
+                isDeprecated: mMap.hasKey("isDeprecated") ? <boolean>mMap["isDeprecated"] : false,
+                typeParameters: toStringArray(mMap.hasKey("typeParameters") ? <json[]>mMap["typeParameters"] : ()),
+                annotations: toStringArray(mMap.hasKey("annotations") ? <json[]>mMap["annotations"] : ())
             };
             out.push(mi);
         }
@@ -512,14 +525,15 @@ function convertFields(json[]? fields) returns FieldInfo[] {
     FieldInfo[] out = [];
     if fields is json[] {
         foreach json f in fields {
-            map<json> fMap = <map<json>> f;
+            map<json> fMap = <map<json>>f;
             FieldInfo fi = {
                 name: fMap.hasKey("name") ? fMap["name"].toString() : "",
                 typeName: fMap.hasKey("typeName") ? fMap["typeName"].toString() : (fMap.hasKey("type") ? fMap["type"].toString() : ""),
-                isStatic: fMap.hasKey("isStatic") ? <boolean> fMap["isStatic"] : false,
-                isFinal: fMap.hasKey("isFinal") ? <boolean> fMap["isFinal"] : false,
+                isStatic: fMap.hasKey("isStatic") ? <boolean>fMap["isStatic"] : false,
+                isFinal: fMap.hasKey("isFinal") ? <boolean>fMap["isFinal"] : false,
                 javadoc: fMap.hasKey("javadoc") && fMap["javadoc"] != () ? fMap["javadoc"].toString() : (),
-                isDeprecated: fMap.hasKey("isDeprecated") ? <boolean> fMap["isDeprecated"] : false
+                literalValue: fMap.hasKey("literalValue") && fMap["literalValue"] != () ? fMap["literalValue"].toString() : (),
+                isDeprecated: fMap.hasKey("isDeprecated") ? <boolean>fMap["isDeprecated"] : false
             };
             out.push(fi);
         }
@@ -532,12 +546,12 @@ function convertConstructors(json[]? ctors) returns ConstructorInfo[] {
     ConstructorInfo[] out = [];
     if ctors is json[] {
         foreach json c in ctors {
-            map<json> cMap = <map<json>> c;
+            map<json> cMap = <map<json>>c;
             ConstructorInfo ci = {
-                parameters: convertParameters(cMap.hasKey("parameters") ? <json[]> cMap["parameters"] : ()),
-                exceptions: toStringArray(cMap.hasKey("exceptions") ? <json[]> cMap["exceptions"] : ()),
+                parameters: convertParameters(cMap.hasKey("parameters") ? <json[]>cMap["parameters"] : ()),
+                exceptions: toStringArray(cMap.hasKey("exceptions") ? <json[]>cMap["exceptions"] : ()),
                 javadoc: cMap.hasKey("javadoc") && cMap["javadoc"] != () ? cMap["javadoc"].toString() : (),
-                isDeprecated: cMap.hasKey("isDeprecated") ? <boolean> cMap["isDeprecated"] : false
+                isDeprecated: cMap.hasKey("isDeprecated") ? <boolean>cMap["isDeprecated"] : false
             };
             out.push(ci);
         }
@@ -579,12 +593,12 @@ public function resolveClassFromJars(string className, string[] jarPaths) return
     if result is () {
         return ();
     }
-    
-    map<json> classMap = <map<json>> result;
-    
+
+    map<json> classMap = <map<json>>result;
+
     // Normalize the result into a ClassInfo record
     // (Same normalization logic as parseJarFromReference)
-    
+
     // Ensure class-level defaults
     if !classMap.hasKey("isInterface") {
         classMap["isInterface"] = false;
@@ -613,7 +627,7 @@ public function resolveClassFromJars(string className, string[] jarPaths) return
     if !classMap.hasKey("constructors") {
         classMap["constructors"] = [];
     }
-    
+
     // Normalize interfaces - always strings
     string[] ifaces = [];
     json[]? ifacesJson = <json[]?>classMap["interfaces"];
@@ -622,7 +636,7 @@ public function resolveClassFromJars(string className, string[] jarPaths) return
             ifaces.push(iface.toString());
         }
     }
-    
+
     // Normalize annotations - always strings
     string[] annots = [];
     json[]? annotsJson = <json[]?>classMap["annotations"];
@@ -631,14 +645,14 @@ public function resolveClassFromJars(string className, string[] jarPaths) return
             annots.push(ann.toString());
         }
     }
-    
+
     // Handle optional superClass
     string? superClassStr = ();
     json? superClassVal = classMap["superClass"];
     if superClassVal is string && superClassVal.length() > 0 {
         superClassStr = superClassVal;
     }
-    
+
     ClassInfo classInfo = {
         className: classMap["className"].toString(),
         packageName: classMap["packageName"].toString(),
@@ -654,7 +668,7 @@ public function resolveClassFromJars(string className, string[] jarPaths) return
         fields: convertFields(<json[]?>classMap["fields"]),
         constructors: convertConstructors(<json[]?>classMap["constructors"])
     };
-    
+
     return classInfo;
 }
 
@@ -667,7 +681,7 @@ public function resolveClassFromJars(string className, string[] jarPaths) return
 # + return - Map of class FQNs to member descriptions (as JSON)
 public function extractFilteredJavadoc(string javadocPath, string[] classNames, string[] memberNames) returns map<string>|error {
     json result = extractFilteredJavadocExternal(javadocPath, classNames, memberNames);
-    return <map<string>> result;
+    return <map<string>>result;
 }
 
 # External function to extract filtered javadoc.
@@ -690,4 +704,15 @@ function resolveMavenArtifact(string coordinate) returns json = @java:Method {
     'class: "io.ballerina.connector.automator.sdkanalyzer.MavenResolver",
     name: "resolveMavenArtifact",
     paramTypes: ["io.ballerina.runtime.api.values.BString"]
+} external;
+
+# External function to resolve Maven artifact with options.
+#
+# + coordinate - Maven coordinate
+# + options - Resolution options (e.g., maxDepth, offlineMode)
+# + return - Resolution result map
+function resolveMavenArtifactWithOptions(string coordinate, map<json> options) returns json = @java:Method {
+    'class: "io.ballerina.connector.automator.sdkanalyzer.MavenResolver",
+    name: "resolveMavenArtifactWithOptions",
+    paramTypes: ["io.ballerina.runtime.api.values.BString", "io.ballerina.runtime.api.values.BMap"]
 } external;

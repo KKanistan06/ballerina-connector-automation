@@ -113,10 +113,10 @@ Now provide the complete corrected code following all rules above:
 }
 
 public function createJavaFixPrompt(string code, CompilationError[] errors, string filePath) returns string {
-   string errorContext = prepareErrorContext(errors);
-   string tripleBacktick = "```";
+    string errorContext = prepareErrorContext(errors);
+    string tripleBacktick = "```";
 
-   return string `
+    return string `
 You are an expert Java compiler and Ballerina-native interop specialist.
 
 <CONTEXT>
@@ -145,6 +145,59 @@ ${code}
 - Preserve all existing methods that are not directly required for the current fixes.
 - Preserve file ordering and formatting style as much as possible.
 </JAVA_NATIVE_ADAPTOR_RULES>
+
+<OUTPUT_REQUIREMENTS>
+Return ONLY the complete corrected Java source code.
+
+DO NOT include:
+- Markdown code blocks or ${tripleBacktick} tags
+- Any explanatory text
+- Any content other than raw Java file content
+</OUTPUT_REQUIREMENTS>
+
+Now provide the complete corrected code.
+`;
+}
+
+public function createJavaRetryFixPrompt(string code, CompilationError[] errors, string filePath,
+      string validationFailure, string previousCandidate, int attempt) returns string {
+   string errorContext = prepareErrorContext(errors);
+   string tripleBacktick = "```";
+
+   return string `
+You are an expert Java compiler and Ballerina-native interop specialist.
+
+<CONTEXT>
+Previous Java fix attempt (${attempt - 1}) was rejected by validator.
+Fix only reported compilation errors with localized edits.
+
+File: ${filePath}
+</CONTEXT>
+
+<COMPILATION_ERRORS>
+${errorContext}
+</COMPILATION_ERRORS>
+
+<VALIDATION_FAILURE>
+${validationFailure}
+</VALIDATION_FAILURE>
+
+<CURRENT_CODE>
+${code}
+</CURRENT_CODE>
+
+<PREVIOUS_REJECTED_CANDIDATE>
+${previousCandidate}
+</PREVIOUS_REJECTED_CANDIDATE>
+
+<RETRY_RULES>
+- Return the COMPLETE Java file, not snippets.
+- Keep unchanged lines exactly as-is wherever possible.
+- Preserve package declaration and class name exactly.
+- Preserve all existing methods unless directly required by current compiler errors.
+- Do not remove imports, helper methods, or class members.
+- Apply minimal line-level edits near the reported error locations.
+</RETRY_RULES>
 
 <OUTPUT_REQUIREMENTS>
 Return ONLY the complete corrected Java source code.

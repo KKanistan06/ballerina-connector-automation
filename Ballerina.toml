@@ -14,9 +14,6 @@ distribution = "2201.13.1"
 "ballerina/os" = "1.9.0"
 "ballerina/jballerina.java" = "0.0.0"
 
-[build-options]
-observabilityIncluded = true
-
 [[platform.java21.dependency]]
 groupId = "io.ballerina.connector.automator.sdkanalyzer"
 artifactId = "native"

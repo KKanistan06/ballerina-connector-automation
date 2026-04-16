@@ -30,9 +30,9 @@ public function generateIRFromMetadata(string metadataPath, GeneratorConfig conf
 
     // Retrieve Anthropic configuration
     AnthropicConfig anthropicCfg = check getAnthropicConfig(
-        config.maxTokens,
-        config.enableExtendedThinking,
-        config.thinkingBudgetTokens
+            config.maxTokens,
+            config.enableExtendedThinking,
+            config.thinkingBudgetTokens
     );
 
     string systemPrompt = getIRGenerationSystemPrompt();
@@ -50,9 +50,9 @@ public function generateIRFromMetadata(string metadataPath, GeneratorConfig conf
         // Save the incomplete JSON for debugging
         string debugPath = string `${config.outputDir}/incomplete-ir-response.json`;
         return error(string `IR JSON is incomplete or truncated (${irJsonStr.length()} chars). ` +
-                     string `The LLM response may have exceeded token limits. ` +
-                     string `Try increasing maxTokens in GeneratorConfig or reducing the SDK complexity. ` +
-                     string `Incomplete JSON saved to: ${debugPath}`);
+                    string `The LLM response may have exceeded token limits. ` +
+                    string `Try increasing maxTokens in GeneratorConfig or reducing the SDK complexity. ` +
+                    string `Incomplete JSON saved to: ${debugPath}`);
     }
 
     // Parse JSON string to IR – provide a useful snippet on failure
@@ -65,14 +65,14 @@ public function generateIRFromMetadata(string metadataPath, GeneratorConfig conf
         // Save the malformed JSON for debugging
         string debugPath = string `${config.outputDir}/malformed-ir-response.json`;
         return error(string `IR JSON parse failed (total ${irJsonStr.length()} chars). ` +
-                     string `HEAD: ${head} ... TAIL: ${tail}. ` +
-                     string `Malformed JSON saved to: ${debugPath}`, irJsonResult);
+                    string `HEAD: ${head} ... TAIL: ${tail}. ` +
+                    string `Malformed JSON saved to: ${debugPath}`, irJsonResult);
     }
     json irJson = irJsonResult;
     IntermediateRepresentation|error irResult = irJson.cloneWithType(IntermediateRepresentation);
     if irResult is error {
         return error("IR JSON structure does not match IntermediateRepresentation schema: " +
-                     irResult.message(), irResult);
+                    irResult.message(), irResult);
     }
     IntermediateRepresentation ir = irResult;
 
@@ -102,9 +102,23 @@ function extractBaseType(string typeName) returns string {
 # + return - true when the type is a built-in
 function isBuiltinBallerina(string typeName) returns boolean {
     string[] builtins = [
-        "string", "int", "float", "boolean", "byte", "decimal",
-        "anydata", "json", "xml", "byte[]", "anydata[]",
-        "map<anydata>", "map<string>", "map<json>", "()", "void", ""
+        "string",
+        "int",
+        "float",
+        "boolean",
+        "byte",
+        "decimal",
+        "anydata",
+        "json",
+        "xml",
+        "byte[]",
+        "anydata[]",
+        "map<anydata>",
+        "map<string>",
+        "map<json>",
+        "()",
+        "void",
+        ""
     ];
     foreach string b in builtins {
         if typeName == b {
@@ -159,9 +173,22 @@ function collectReferencedTypes(IntermediateRepresentation ir) returns map<boole
 # + return - true if the name has a typical enum suffix
 function looksLikeEnum(string typeName) returns boolean {
     string[] enumSuffixes = [
-        "Mode", "Type", "Status", "Class", "Algorithm", "ACL",
-        "Payer", "Encryption", "Protocol", "Access", "Permission",
-        "Tier", "Action", "State", "Policy", "Direction"
+        "Mode",
+        "Type",
+        "Status",
+        "Class",
+        "Algorithm",
+        "ACL",
+        "Payer",
+        "Encryption",
+        "Protocol",
+        "Access",
+        "Permission",
+        "Tier",
+        "Action",
+        "State",
+        "Policy",
+        "Direction"
     ];
     foreach string suffix in enumSuffixes {
         if typeName.endsWith(suffix) {
@@ -272,7 +299,7 @@ function extractJsonFromResponse(string responseText) returns string|error {
     }
 
     return error("Could not extract JSON from LLM response. " +
-                 "Expected a raw JSON object or a ```json fenced block.");
+                "Expected a raw JSON object or a ```json fenced block.");
 }
 
 # Check if a JSON string is syntactically complete (balanced braces/brackets).
@@ -288,7 +315,7 @@ function isCompleteJson(string jsonStr) returns boolean {
     int i = 0;
     while i < jsonStr.length() {
         string char = jsonStr.substring(i, i + 1);
-        
+
         if escaped {
             escaped = false;
             i += 1;

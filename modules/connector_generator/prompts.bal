@@ -2,7 +2,7 @@
 #
 # + return - System prompt string
 public function getConnectorGenerationSystemPrompt() returns string {
-        return string `<role>
+    return string `<role>
 You are an expert Ballerina native connector code generation assistant.
 Your task is to generate production-ready connector artifacts from three inputs:
     1) structured native-library metadata JSON,
@@ -98,7 +98,8 @@ Three inputs are always provided together in each user message, each clearly lab
      - A 'key param in Ballerina spec (quoted keyword) must be passed to Java as "key".
      - Spread-config params (*XConfig) carry optional overrides; map each field as ConfigField.
      - When return type is error?, Java response fields are discarded; return null on success.
-     - When return type is T|error, map Java response fields to a Ballerina BMap matching T.
+     - When return type is T|error, map Java response fields to typed Ballerina values
+       compatible with T (typed records/typed arrays), not an untyped top-level map.
 </input_schema>
 
 <output_schema>
@@ -226,6 +227,10 @@ G2. clientBal
     - Remote methods should be emitted as @java:Method external declarations unless the API spec requires wrapper logic.
     - If wrapper logic is required (for example to normalize/forward config values), wrappers must still preserve exact API spec signatures.
     - Keep external function/native method names deterministic and aligned with nativeAdaptorJava method names.
+    - If init delegates to native init (for example return nativeInit(self, config);), the corresponding external declaration MUST exist in the same file and bind to Java method name init.
+    - Do not emit calls to undeclared native helper functions.
+        - Emit all @java:Method external native interop declarations at module level (outside the Client class) and place them at the end of the file after the Client class.
+      Wrapper methods inside Client must call these module-level native functions directly.
     - Preserve existing high-level docs and comments from API spec when present.
 
 G3. nativeAdaptorJava
@@ -233,10 +238,10 @@ G3. nativeAdaptorJava
     - Build initialization/auth/configuration logic only from input model and metadata; never hard-code provider-specific flows.
     - Enforce Java source layout under src/main/java using package-to-path mapping.
       The generated package declaration and nativeAdaptorFilePath must always be consistent.
-      Example path shape only: src/main/java/io/ballerina/lib/aws/s3
+            Example path shape only: src/main/java/org/example/generated/adaptor
     - For each mapped method, include mapped metadata method reference in code comments for auditability.
     - Use reusable helper patterns for config extraction/conversion/error handling to keep method bodies deterministic and consistent.
-    - Prefer explicit imports for referenced native types and avoid wildcard imports.
+    - Use explicit imports for referenced native types. Wildcard imports (for example import ...*;) are disallowed.
     - Select SDK APIs based on the effective SDK version in the provided inputs/build configuration.
       Do not choose methods/classes marked deprecated for that SDK version when a non-deprecated equivalent exists.
       If no non-deprecated equivalent is available, use deterministic fallback and report it in validation.notes.
@@ -246,6 +251,42 @@ G3. nativeAdaptorJava
       This applies to all BString, BMap, BArray, and Long extractions from Object fields.
     - If API spec contains operation-level close/lifecycle semantics, implement matching native close behavior.
     - Handle checked/unchecked failures by propagating deterministic error path.
+    - nativeAdaptorJava must be self-contained. Do NOT call helper classes that are not generated
+      in the same source (for example, avoid external ModuleUtils unless you also generate it).
+    - Define module resolution in nativeAdaptorJava based on the runtime BObject package
+      and reuse it for all typed record/object creation:
+        import io.ballerina.runtime.api.Module;
+        private static volatile Module BALLERINA_MODULE = new Module("generated", "connector", "0");
+        private static void cacheModuleFromClient(BObject bClient) {
+            Module m = bClient.getType().getPackage();
+            if (m != null) {
+                BALLERINA_MODULE = m;
+            }
+        }
+      Call cacheModuleFromClient(bClient) in init and before typed response mapping.
+      Do NOT hardcode vendor/service module coordinates for typed value creation.
+    - For methods that return T|error where T is a Ballerina record (or contains record arrays),
+      response mapping MUST create typed record values explicitly using:
+        ValueCreator.createRecordValue(BALLERINA_MODULE, RECORD_NAME)
+      and MUST populate fields on that record value.
+      Do NOT return raw ValueCreator.createMapValue() for record return payloads.
+    - For arrays of records, create typed arrays explicitly using the record type:
+        Type recordType = ValueCreator.createRecordValue(BALLERINA_MODULE, RECORD_NAME).getType();
+        BArray arr = ValueCreator.createArrayValue(TypeCreator.createArrayType(recordType));
+      and insert record instances into that typed array.
+    - Avoid Java type-name ambiguity with SDK enums/classes named Type.
+      Do NOT import SDK ...model.Type when runtime Type is used.
+      Prefer fully-qualified runtime type usage or avoid importing one of the conflicting symbols.
+    - When response type in API spec is T|error, the Java method must return an object structurally
+      compatible with T (typed record/typed array) so Ballerina does not perform invalid map-to-record casts.
+    - When creating primitive-typed arrays, import and use
+        io.ballerina.runtime.api.types.PredefinedTypes
+        (NOT io.ballerina.runtime.api.PredefinedTypes).
+    - Avoid repeated broad catch blocks in each operation. Prefer a generic helper pattern such as
+        return withErrorHandling("opName", () -> { ... });
+      where the helper contains either specific multi-catch clauses or a single centralized fallback catch.
+      Generated operation methods should not each use catch (Exception e) unless no deterministic typed
+      alternative exists.
 
 G4. Consistency
     - methodMappings.specMethod set must equal client remote method set.
@@ -303,6 +344,9 @@ G5. Ballerina interop conventions
                   return createError("operation failed: " + e.getMessage(), e);
               }
           rather than separate catch blocks with identical bodies.
+        - Do not emit per-method catch (Exception e) blocks in generated operation bodies.
+          Prefer either specific multi-catch clauses for known conversion/SDK failures or
+          a single centralized helper that performs fallback exception wrapping.
 
     G5g. clientBal external function declarations
         - The init external function passes the Ballerina client object (self) as first param:
@@ -313,6 +357,11 @@ G5. Ballerina interop conventions
           Java method declares it as the first Java parameter:
               function nativePutObject(Client bClient, string bucket, ...)
                   returns PutObjectResponse|error = @java:Method { ... } external;
+        - Signature parity is mandatory between each @java:Method declaration and the bound Java method.
+            If external signature is (Client, p1, p2, ..., pn), Java signature must be
+            (Environment env, BObject bClient, j1, j2, ..., jn) where each ji corresponds to pi
+          in the same order with compatible runtime type mapping.
+          Do NOT collapse multiple declared params into one BMap unless clientBal also declares one param.
 </codegen_rules>
 
 <example>
@@ -380,20 +429,17 @@ Minimum clientBal style (illustrative):
         import ballerina/jballerina.java;
 
         public isolated client class Client {
-                public isolated function init(*ConnectionConfig config) returns error? {
-                        return self.externInit(config);
-                }
-
-                isolated function externInit(ConnectionConfig config) returns error? = @java:Method {
-                        name: "init",
-                        'class: "org.example.generated.adaptor.GeneratedNativeAdaptor"
-                } external;
-
                 remote isolated function createResource(CreateResourceRequest request, string parentId)
-                        returns CreateResourceResponse|error = @java:Method {
-                        'class: "org.example.generated.adaptor.GeneratedNativeAdaptor"
-                } external;
+            returns CreateResourceResponse|error {
+            return nativeCreateResource(self, request, parentId);
         }
+        }
+
+    isolated function nativeCreateResource(Client bClient, CreateResourceRequest request, string parentId)
+        returns CreateResourceResponse|error = @java:Method {
+        'class: "org.example.generated.adaptor.GeneratedNativeAdaptor"
+    } external;
+            
 </example>
 
 <validation_checklist_mandatory>
@@ -421,6 +467,23 @@ Before returning output, perform these checks and reflect them in validation:
          using package-to-path mapping (service/vendor name only when present in inputs).
     V13. Generated SDK calls avoid deprecated methods/classes for the selected SDK version;
          unavoidable deprecated usage is explicitly recorded in validation.notes.
+    V14. For every T|error response where T is a record (or contains record arrays),
+         nativeAdaptorJava returns typed record/typed array values created via
+         createRecordValue(BALLERINA_MODULE, ...) and createArrayType(recordType);
+         no raw createMapValue() is used as the top-level return payload.
+    V15. Generated nativeAdaptorJava has no unresolved helper references (e.g., missing ModuleUtils)
+         and compiles without package-resolution errors for runtime types (Module, PredefinedTypes).
+    V16. Operation methods avoid repeated catch (Exception e) blocks by using centralized helper-based
+         error handling or specific multi-catch patterns.
+    V17. For every @java:Method external declaration, Java parameter arity/order must match:
+         Java method params must be (Environment, BObject, ...) plus one mapped param
+         for each external param after Client, in identical order.
+    V18. If clientBal contains nativeInit(self, config) (or equivalent init-native call),
+         it must also contain a matching external declaration for that native init function bound to Java init.
+    V19. nativeAdaptorJava must not contain ambiguous Type imports:
+         runtime io.ballerina.runtime.api.types.Type and SDK ...model.Type must not be imported together.
+    V20. clientBal must not define @java:Method external declarations inside the Client class body;
+         these declarations must be module-level functions outside the class.
 
 If any mandatory check fails, still return schema-compliant JSON with detailed validation errors.
 </validation_checklist_mandatory>
@@ -431,12 +494,12 @@ No markdown. No explanation outside JSON.
 
 nativeAdaptorFilePath must be derived from nativeAdaptorClassName as follows:
     replace every "." with "/", append ".java", prepend "src/main/java/"
-    example: "org.example.sqs.adaptor.SqsNativeAdaptor"
-          →  "src/main/java/org/example/sqs/adaptor/SqsNativeAdaptor.java"
+    example: "org.example.generated.adaptor.NativeAdaptor"
+          →  "src/main/java/org/example/generated/adaptor/NativeAdaptor.java"
 
 Directory structure must remain generic and input-driven.
 Use vendor/service-specific roots only when they are explicitly present in inputs.
-Example (illustrative): "src/main/java/io/ballerina/lib/aws/s3"
+Example (illustrative): "src/main/java/org/example/generated/adaptor"
 </output_instructions>`;
 }
 
@@ -450,7 +513,7 @@ Example (illustrative): "src/main/java/io/ballerina/lib/aws/s3"
 public function getConnectorGenerationUserPrompt(string metadataJson, string irJson, string apiSpecBal,
         string sdkVersionHint = "")
                 returns string {
-        return string `<task>
+    return string `<task>
 Generate connector artifacts from the provided inputs.
 You MUST obey all hard constraints, mapping rules, codegen rules, and validation checklist.
 Return ONLY one JSON object matching the required schema.

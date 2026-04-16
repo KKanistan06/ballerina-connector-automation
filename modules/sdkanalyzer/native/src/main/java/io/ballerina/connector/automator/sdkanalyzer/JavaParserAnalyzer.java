@@ -4,7 +4,9 @@ package io.ballerina.connector.automator.sdkanalyzer;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -35,6 +37,9 @@ import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.comments.JavadocComment;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.NullLiteralExpr;
+import com.github.javaparser.ast.expr.StringLiteralExpr;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 
@@ -114,7 +119,6 @@ public class JavaParserAnalyzer {
      * @param jarPathOrResult JAR path or Maven resolution result
      * @return Parsed class information
      */
-    @SuppressWarnings("unchecked")
     public static Object analyzeJarWithJavaParser(Object jarPathOrResult) {
         try {
             List<File> jarFiles = new ArrayList<>();
@@ -601,6 +605,18 @@ public class JavaParserAnalyzer {
                 fieldInfo.put(StringUtils.fromString("isStatic"), true);
                 fieldInfo.put(StringUtils.fromString("isFinal"), true);
                 fieldInfo.put(StringUtils.fromString("isDeprecated"), enumConst.isAnnotationPresent("Deprecated"));
+
+                String enumLiteralValue = null;
+                if (!enumConst.getArguments().isEmpty()) {
+                    Expression firstArg = enumConst.getArguments().get(0);
+                    if (firstArg instanceof StringLiteralExpr stringLiteralExpr) {
+                        enumLiteralValue = stringLiteralExpr.asString();
+                    } else if (firstArg instanceof NullLiteralExpr) {
+                        enumLiteralValue = null;
+                    }
+                }
+                fieldInfo.put(StringUtils.fromString("literalValue"),
+                        enumLiteralValue == null ? null : StringUtils.fromString(enumLiteralValue));
                 
                 // Javadoc for enum constant
                 Optional<JavadocComment> javadoc = enumConst.getJavadocComment();
@@ -1023,8 +1039,20 @@ public class JavaParserAnalyzer {
         private final List<BMap<BString, Object>> methods = new ArrayList<>();
         private final List<BMap<BString, Object>> fields = new ArrayList<>();
         private final List<BMap<BString, Object>> constructors = new ArrayList<>();
+        private final Map<String, String> enumLikeConstantValues = new HashMap<>();
+        private final Map<String, BMap<BString, Object>> enumLikeFieldEntries = new HashMap<>();
         private boolean isEnum = false;
         private String enumClassName = "";
+
+        private static final class EnumLikeConstantValue {
+            private final String value;
+
+            private EnumLikeConstantValue(String value) {
+                this.value = value;
+            }
+        }
+
+        private static final Object UNKNOWN_STACK_VALUE = new Object();
         
         public ASMClassAnalyzer(BMap<BString, Object> classInfo, MapType mapType) {
             super(Opcodes.ASM9);
@@ -1077,6 +1105,7 @@ public class JavaParserAnalyzer {
                 fieldInfo.put(StringUtils.fromString("isStatic"), true);
                 fieldInfo.put(StringUtils.fromString("isFinal"), true);
                 fieldInfo.put(StringUtils.fromString("isDeprecated"), false);
+                fieldInfo.put(StringUtils.fromString("literalValue"), null);
                 // Try to attach javadoc from extracted index if available
                 String enumFieldJavadoc = null;
                 try {
@@ -1093,6 +1122,37 @@ public class JavaParserAnalyzer {
                 } catch (Exception ignored) {}
                 fieldInfo.put(StringUtils.fromString("javadoc"), enumFieldJavadoc == null ? null : StringUtils.fromString(enumFieldJavadoc));
                 fields.add(fieldInfo);
+            } else if (!isEnum && (access & Opcodes.ACC_PUBLIC) != 0 &&
+                    (access & Opcodes.ACC_STATIC) != 0 && (access & Opcodes.ACC_FINAL) != 0) {
+                // For enum-like classes (e.g., Region), capture public static final self-typed constants.
+                String fieldType = org.objectweb.asm.Type.getType(descriptor).getClassName();
+                if (fieldType.equals(enumClassName)) {
+                    BMap<BString, Object> fieldInfo = ValueCreator.createMapValue(mapType);
+                    fieldInfo.put(StringUtils.fromString("name"), StringUtils.fromString(name));
+                    fieldInfo.put(StringUtils.fromString("type"), StringUtils.fromString(fieldType));
+                    fieldInfo.put(StringUtils.fromString("isStatic"), true);
+                    fieldInfo.put(StringUtils.fromString("isFinal"), true);
+                    fieldInfo.put(StringUtils.fromString("isDeprecated"), false);
+                    fieldInfo.put(StringUtils.fromString("literalValue"), null);
+
+                    String fieldJavadoc = null;
+                    try {
+                        if (javadocIndex != null) {
+                            Map<String, String> classMap = javadocIndex.get(enumClassName);
+                            if (classMap == null) {
+                                classMap = javadocIndex.get(enumClassName.replace('$', '.'));
+                            }
+                            if (classMap != null) {
+                                fieldJavadoc = classMap.get(name);
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+                    fieldInfo.put(StringUtils.fromString("javadoc"),
+                            fieldJavadoc == null ? null : StringUtils.fromString(fieldJavadoc));
+                    fields.add(fieldInfo);
+                    enumLikeFieldEntries.put(name, fieldInfo);
+                }
             }
             
             return null;
@@ -1101,6 +1161,10 @@ public class JavaParserAnalyzer {
         @Override
         public MethodVisitor visitMethod(int access, String name, String descriptor, 
                 String signature, String[] exceptions) {
+
+            if ("<clinit>".equals(name)) {
+                return createEnumLikeClinitVisitor();
+            }
             
             // Only include public methods
             if ((access & Opcodes.ACC_PUBLIC) != 0) {
@@ -1170,9 +1234,127 @@ public class JavaParserAnalyzer {
             
             return null;
         }
+
+        private MethodVisitor createEnumLikeClinitVisitor() {
+            return new MethodVisitor(Opcodes.ASM9) {
+                private final Deque<Object> stack = new ArrayDeque<>();
+
+                private Object popOrUnknown() {
+                    if (stack.isEmpty()) {
+                        return UNKNOWN_STACK_VALUE;
+                    }
+                    return stack.pop();
+                }
+
+                @Override
+                public void visitLdcInsn(Object value) {
+                    if (value instanceof String) {
+                        stack.push(value);
+                    } else {
+                        stack.push(UNKNOWN_STACK_VALUE);
+                    }
+                }
+
+                @Override
+                public void visitInsn(int opcode) {
+                    switch (opcode) {
+                        case Opcodes.ICONST_0 -> stack.push(Boolean.FALSE);
+                        case Opcodes.ICONST_1 -> stack.push(Boolean.TRUE);
+                        case Opcodes.ACONST_NULL -> stack.push(UNKNOWN_STACK_VALUE);
+                        case Opcodes.POP -> popOrUnknown();
+                        case Opcodes.DUP -> {
+                            if (!stack.isEmpty()) {
+                                stack.push(stack.peek());
+                            }
+                        }
+                        default -> {
+                        }
+                    }
+                }
+
+                @Override
+                public void visitMethodInsn(int opcode, String owner, String methodName, String methodDescriptor,
+                        boolean isInterface) {
+                    org.objectweb.asm.Type[] argTypes = org.objectweb.asm.Type.getArgumentTypes(methodDescriptor);
+                    Object[] args = new Object[argTypes.length];
+                    for (int i = argTypes.length - 1; i >= 0; i--) {
+                        args[i] = popOrUnknown();
+                    }
+
+                    org.objectweb.asm.Type returnType = org.objectweb.asm.Type.getReturnType(methodDescriptor);
+                    boolean enumCtorCall = isEnum && opcode == Opcodes.INVOKESPECIAL &&
+                            owner.replace('/', '.').equals(enumClassName) && "<init>".equals(methodName);
+
+                    if (enumCtorCall) {
+                        String literalValue = null;
+                        if (args.length >= 3 && args[2] instanceof String) {
+                            literalValue = (String) args[2];
+                        }
+                        stack.push(new EnumLikeConstantValue(literalValue));
+                        return;
+                    }
+
+                    boolean returnsSelfType = opcode == Opcodes.INVOKESTATIC &&
+                            returnType != null && enumClassName.equals(returnType.getClassName());
+
+                    if (returnsSelfType) {
+                        if (args.length > 0 && args[0] instanceof String) {
+                            stack.push(new EnumLikeConstantValue((String) args[0]));
+                        } else {
+                            stack.push(UNKNOWN_STACK_VALUE);
+                        }
+                    } else if (returnType != null && returnType.getSort() != org.objectweb.asm.Type.VOID) {
+                        stack.push(UNKNOWN_STACK_VALUE);
+                    }
+                }
+
+                @Override
+                public void visitFieldInsn(int opcode, String owner, String fieldName, String fieldDescriptor) {
+                    if (opcode == Opcodes.PUTSTATIC) {
+                        Object value = popOrUnknown();
+                        String ownerClass = owner.replace('/', '.');
+                        String fieldType = org.objectweb.asm.Type.getType(fieldDescriptor).getClassName();
+
+                        if (ownerClass.equals(enumClassName) && fieldType.equals(enumClassName) &&
+                                value instanceof EnumLikeConstantValue) {
+                            String literalValue = ((EnumLikeConstantValue) value).value;
+                            if (literalValue != null && !literalValue.isEmpty()) {
+                                enumLikeConstantValues.put(fieldName, literalValue);
+                            }
+                        }
+                    }
+                }
+            };
+        }
         
         @Override
         public void visitEnd() {
+            if (!enumLikeFieldEntries.isEmpty()) {
+                foreachField:
+                for (Map.Entry<String, BMap<BString, Object>> entry : enumLikeFieldEntries.entrySet()) {
+                    String literalValue = enumLikeConstantValues.get(entry.getKey());
+                    if (literalValue == null || literalValue.isEmpty()) {
+                        continue;
+                    }
+                    entry.getValue().put(StringUtils.fromString("javadoc"), StringUtils.fromString(literalValue));
+                    entry.getValue().put(StringUtils.fromString("literalValue"), StringUtils.fromString(literalValue));
+                }
+            }
+
+            if (isEnum && !fields.isEmpty()) {
+                for (BMap<BString, Object> fieldInfo : fields) {
+                    BString fieldName = (BString) fieldInfo.get(StringUtils.fromString("name"));
+                    if (fieldName == null) {
+                        continue;
+                    }
+                    String literalValue = enumLikeConstantValues.get(fieldName.getValue());
+                    if (literalValue == null || literalValue.isEmpty()) {
+                        continue;
+                    }
+                    fieldInfo.put(StringUtils.fromString("literalValue"), StringUtils.fromString(literalValue));
+                }
+            }
+
             // Set collected methods, fields, constructors
             classInfo.put(StringUtils.fromString("methods"),
                     ValueCreator.createArrayValue(methods.toArray(BMap[]::new), 

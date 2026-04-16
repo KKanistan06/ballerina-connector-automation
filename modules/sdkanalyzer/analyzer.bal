@@ -19,6 +19,8 @@ import ballerina/io;
 import ballerina/regex;
 import ballerina/time;
 
+const int AUTO_MAX_ADDITIONAL_CLIENTS = 4;
+
 # Main function that analyzes a Java SDK JAR file using JavaParser approach.
 #
 # + jarPath - Path to the JAR file (local filesystem path)
@@ -31,9 +33,11 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     time:Utc startTime = time:utcNow();
     string[] warnings = [];
 
+    printAnalyzerPlan(jarPath, outputDir, config.quietMode);
+
     // Step 1: Check if it's a Maven coordinate or local JAR
     boolean isMavenCoordinate = jarPath.includes(":") && !jarPath.includes("/") && !jarPath.includes("\\");
-    
+
     if !isMavenCoordinate {
         // Validate local JAR file exists
         boolean jarExists = check file:test(jarPath, file:EXISTS);
@@ -51,9 +55,7 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     }
 
     // Step 3: Extract and analyze classes using JavaParser
-    if !config.quietMode {
-        io:println("Step 1/7: Extracting classes...");
-    }
+    printAnalyzerStep(1, "Extracting classes", config.quietMode);
 
     ParsedJarResult|AnalyzerError analysisResult = analyzeJarWithDependencies(jarPath, config);
     if analysisResult is AnalyzerError {
@@ -73,9 +75,6 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     check writeClassList(outputDir, rawClasses);
 
     // Step 4: Filter relevant classes for client identification
-    if !config.quietMode {
-        io:println("Step 2/7: Filtering classes...");
-    }
 
     ClassInfo[] filteredClasses = [];
     foreach ClassInfo cls in rawClasses {
@@ -96,90 +95,41 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     check writeFilteredClassList(outputDir, filteredClasses);
 
     // Step 5: Identify root client class using LLM with weighted scoring
-    if !config.quietMode {
-        io:println("Step 3/7: Identifying root client...");
-    }
+    printAnalyzerStep(2, "Identifying root client", config.quietMode);
 
     // Increase candidate shortlist to give the LLM more options for side-by-side comparison
-    [ClassInfo, LLMClientScore][]|AnalyzerError clientResult = identifyClientClassWithLLM(filteredClasses, 20);
+        [ClassInfo, LLMClientScore][]|AnalyzerError clientResult = identifyClientClassWithLLM(
+            filteredClasses,
+            20,
+            config.clientRoleHint
+        );
     if clientResult is AnalyzerError {
         return clientResult;
     }
-    
+
     // Get top 5 candidates with scores
     [ClassInfo, LLMClientScore][] topCandidates = clientResult;
-    
-    // Select the top LLM-scored candidate as the root client (LLM-only decision)
-    int syncIndex = -1;
-    foreach int i in 0 ..< topCandidates.length() {
-        ClassInfo c = <ClassInfo> topCandidates[i][0];
-        string lname = c.simpleName.toLowerAscii();
-        if !lname.includes("async") {
-            syncIndex = i;
-            break;
-        }
-    }
 
-    decimal topScore = 0.0;
-    [ClassInfo, LLMClientScore][] tied = [];
-    if syncIndex != -1 {
-        // Use the first sync candidate's score as the topScore to group tied sync candidates
-        topScore = <decimal> topCandidates[syncIndex][1].totalScore;
-        foreach var t in topCandidates {
-            ClassInfo c = <ClassInfo> t[0];
-            LLMClientScore s = <LLMClientScore> t[1];
-            string lname = c.simpleName.toLowerAscii();
-            if s.totalScore == topScore && !lname.includes("async") {
-                tied.push([c, s]);
-            } else if (s.totalScore < topScore) {
-                break;
-            }
-        }
-    } else {
-        // No sync candidate found in the list; fall back to previous behavior using overall top score
-        topScore = <decimal> topCandidates[0][1].totalScore;
-        foreach var t in topCandidates {
-            ClassInfo c = <ClassInfo> t[0];
-            LLMClientScore s = <LLMClientScore> t[1];
-            if s.totalScore == topScore {
-                tied.push([c, s]);
-            } else {
-                break;
-            }
-        }
-    }
-
-    ClassInfo rootClient;
-    if tied.length() == 1 {
-        rootClient = tied[0][0];
-    } else {
-        // Choose the tied candidate with the largest number of methods
-        int bestMethods = -1;
-        ClassInfo? bestCls = null;
-        foreach var t in tied {
-            ClassInfo c = <ClassInfo> t[0];
-            // LLMClientScore s = <LLMClientScore> t[1];
-            if c.methods.length() > bestMethods {
-                bestMethods = c.methods.length();
-                bestCls = c;
-            }
-        }
-        if bestCls is ClassInfo {
-            rootClient = bestCls;
-        } else {
-            // Fallback to the first candidate
-            rootClient = topCandidates[0][0];
-        }
-    }
+    ClassInfo rootClient = selectRootClientCandidate(topCandidates, config.clientRoleHint, config.clientClassHint);
+    SelectedClientInfo[] selectedClients = selectDetectedClientCandidates(topCandidates, rootClient);
 
     if !config.quietMode {
         io:println(string `  → Root client: ${rootClient.simpleName}`);
+        if selectedClients.length() > 1 {
+            string[] extras = [];
+            foreach SelectedClientInfo selectedClient in selectedClients {
+                if !selectedClient.isRoot {
+                    extras.push(string `${selectedClient.simpleName} (${selectedClient.role})`);
+                }
+            }
+            if extras.length() > 0 {
+                io:println(string `  → Additional clients: ${string:'join(", ", ...extras)}`);
+            }
+        }
     }
 
     // Step 6: Detect client initialization pattern (LLM-only)
-    if !config.quietMode {
-        io:println("Step 4/7: Detecting init pattern...");
-    }
+    printAnalyzerStep(3, "Detecting init pattern", config.quietMode);
 
     ClientInitPattern|AnalyzerError clientInitResult = detectClientInitPatternWithLLM(rootClient, rawClasses, dependencyJarPaths);
     if clientInitResult is AnalyzerError {
@@ -188,21 +138,16 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     ClientInitPattern clientInitPattern = clientInitResult;
 
     // Step 7: Extract public methods from root client
-    if !config.quietMode {
-        io:println("Step 5/7: Extracting methods...");
-    }
+    printAnalyzerStep(4, "Extracting and ranking methods", config.quietMode);
 
     MethodInfo[] publicMethods = extractPublicMethods(rootClient);
-    int totalMethods = publicMethods.length();
+    int totalPublicMethods = publicMethods.length();
 
     if !config.quietMode {
-        io:println(string `  → ${totalMethods} methods`);
+        io:println(string `  → ${totalPublicMethods} methods`);
     }
 
     // Step 8: Rank methods by usage using LLM
-    if !config.quietMode {
-        io:println("Step 6/7: Ranking methods...");
-    }
 
     MethodInfo[]|AnalyzerError rankedResult = rankMethodsByUsageWithLLM(publicMethods);
     if rankedResult is AnalyzerError {
@@ -210,20 +155,26 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     }
     MethodInfo[] selectedMethods = rankedResult;
 
-    // Step 9: Generate structured metadata
     if !config.quietMode {
-        io:println("Step 7/7: Generating metadata...");
+        io:println(string `  → ${selectedMethods.length()} methods selected`);
     }
+
+    // Step 9: Generate structured metadata
+    printAnalyzerStep(5, "Generating metadata", config.quietMode);
 
     // Pass the full set of extracted classes so enum types and other supporting
     // classes can be resolved when generating structured metadata.
     StructuredSDKMetadata structuredMetadata = generateStructuredMetadata(
-        rootClient,
-        clientInitPattern,
-        selectedMethods,
-        rawClasses,
-        config
+            rootClient,
+            clientInitPattern,
+            selectedMethods,
+            rawClasses,
+            dependencyJarPaths,
+            config
     );
+    if selectedClients.length() > 0 {
+        structuredMetadata.selectedClients = selectedClients;
+    }
 
     // Step 10: Create final metadata object
     time:Utc endTime = time:utcNow();
@@ -245,17 +196,330 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     decimal finalDuration = time:utcDiffSeconds(finalEndTime, startTime);
 
     if !config.quietMode {
-        io:println(string `Done in ${finalDuration}s`);
+        printAnalyzerSummary(metadataPath, selectedMethods.length(), finalDuration);
     }
 
     return {
         success: true,
         metadataPath: metadataPath,
         classesAnalyzed: 1,
-        methodsExtracted: totalMethods,
+        methodsExtracted: selectedMethods.length(),
         durationMs: durationMs,
         warnings: warnings
     };
+}
+
+function selectRootClientCandidate([ClassInfo, LLMClientScore][] topCandidates, string? roleHint = (),
+        string? classHint = ()) returns ClassInfo {
+    if classHint is string {
+        string normalizedHint = classHint.trim();
+        if normalizedHint.length() > 0 {
+            string normalizedLower = normalizedHint.toLowerAscii();
+            foreach var entry in topCandidates {
+                ClassInfo c = <ClassInfo>entry[0];
+                if c.className == normalizedHint || c.simpleName == normalizedHint ||
+                    c.className.toLowerAscii() == normalizedLower || c.simpleName.toLowerAscii() == normalizedLower {
+                    return c;
+                }
+            }
+        }
+    }
+
+    if roleHint is string {
+        string normalizedRole = roleHint.trim().toLowerAscii();
+        if normalizedRole.length() > 0 {
+            foreach var entry in topCandidates {
+                ClassInfo c = <ClassInfo>entry[0];
+                if inferClientRole(c.simpleName) == normalizedRole {
+                    return c;
+                }
+            }
+        }
+    }
+
+    int syncIndex = -1;
+    foreach int i in 0 ..< topCandidates.length() {
+        ClassInfo c = <ClassInfo>topCandidates[i][0];
+        string lname = c.simpleName.toLowerAscii();
+        if !lname.includes("async") {
+            syncIndex = i;
+            break;
+        }
+    }
+
+    decimal topScore = 0.0;
+    [ClassInfo, LLMClientScore][] tied = [];
+    if syncIndex != -1 {
+        topScore = <decimal>topCandidates[syncIndex][1].totalScore;
+        foreach var t in topCandidates {
+            ClassInfo c = <ClassInfo>t[0];
+            LLMClientScore s = <LLMClientScore>t[1];
+            string lname = c.simpleName.toLowerAscii();
+            if s.totalScore == topScore && !lname.includes("async") {
+                tied.push([c, s]);
+            } else if s.totalScore < topScore {
+                break;
+            }
+        }
+    } else {
+        topScore = <decimal>topCandidates[0][1].totalScore;
+        foreach var t in topCandidates {
+            ClassInfo c = <ClassInfo>t[0];
+            LLMClientScore s = <LLMClientScore>t[1];
+            if s.totalScore == topScore {
+                tied.push([c, s]);
+            } else {
+                break;
+            }
+        }
+    }
+
+    if tied.length() == 1 {
+        return tied[0][0];
+    }
+
+    int bestMethods = -1;
+    ClassInfo? bestCls = null;
+    foreach var t in tied {
+        ClassInfo c = <ClassInfo>t[0];
+        if c.methods.length() > bestMethods {
+            bestMethods = c.methods.length();
+            bestCls = c;
+        }
+    }
+    if bestCls is ClassInfo {
+        return bestCls;
+    }
+    return topCandidates[0][0];
+}
+
+function selectDetectedClientCandidates([ClassInfo, LLMClientScore][] rankedCandidates,
+        ClassInfo rootClient) returns SelectedClientInfo[] {
+    SelectedClientInfo[] selected = [];
+    map<boolean> added = {};
+    decimal rootScore = 0.0;
+    string rootClassName = rootClient.className;
+
+    map<SelectedClientInfo> bestByRole = {};
+    foreach var entry in rankedCandidates {
+        ClassInfo cls = <ClassInfo>entry[0];
+        LLMClientScore score = <LLMClientScore>entry[1];
+
+        SelectedClientInfo info = {
+            className: cls.className,
+            packageName: cls.packageName,
+            simpleName: cls.simpleName,
+            role: inferClientRole(cls.simpleName),
+            score: score.totalScore,
+            isRoot: cls.className == rootClassName,
+            reason: score.breakdown
+        };
+
+        if info.isRoot {
+            selected.push(info);
+            added[cls.className] = true;
+            rootScore = score.totalScore;
+            continue;
+        }
+
+        if !shouldSelectAdditionalClient(cls, score, info.role, rootScore, rootClient.packageName) {
+            continue;
+        }
+
+        if !bestByRole.hasKey(info.role) {
+            bestByRole[info.role] = info;
+        }
+    }
+
+    if selected.length() == 0 {
+        SelectedClientInfo fallback = {
+            className: rootClient.className,
+            packageName: rootClient.packageName,
+            simpleName: rootClient.simpleName,
+            role: inferClientRole(rootClient.simpleName),
+            score: rootScore,
+            isRoot: true,
+            reason: "Root client selected by analyzer"
+        };
+        selected.push(fallback);
+        added[rootClient.className] = true;
+    }
+
+    int maxCount = AUTO_MAX_ADDITIONAL_CLIENTS;
+    string[] preferredRoles = ["admin", "producer", "consumer", "general"];
+    foreach string role in preferredRoles {
+        if selected.length() >= maxCount {
+            break;
+        }
+        if bestByRole.hasKey(role) {
+            SelectedClientInfo? candidate = bestByRole[role];
+            if candidate is SelectedClientInfo && !added.hasKey(candidate.className) {
+                selected.push(candidate);
+                added[candidate.className] = true;
+            }
+        }
+    }
+
+    foreach var entry in rankedCandidates {
+        if selected.length() >= maxCount {
+            break;
+        }
+        ClassInfo cls = <ClassInfo>entry[0];
+        if added.hasKey(cls.className) {
+            continue;
+        }
+        LLMClientScore score = <LLMClientScore>entry[1];
+        SelectedClientInfo info = {
+            className: cls.className,
+            packageName: cls.packageName,
+            simpleName: cls.simpleName,
+            role: inferClientRole(cls.simpleName),
+            score: score.totalScore,
+            isRoot: false,
+            reason: score.breakdown
+        };
+        selected.push(info);
+        added[cls.className] = true;
+    }
+
+    return selected;
+}
+
+function shouldSelectAdditionalClient(ClassInfo cls, LLMClientScore score, string role, decimal rootScore,
+        string rootPackage) returns boolean {
+    string simpleNameLower = cls.simpleName.toLowerAscii();
+    if isHelperClientLikeName(simpleNameLower) {
+        return false;
+    }
+
+    if score.totalScore < 20.0d {
+        return false;
+    }
+
+    if rootScore > 0.0d {
+        decimal ratio = score.totalScore / rootScore;
+        if ratio < 0.35d && score.totalScore < 45.0d {
+            return false;
+        }
+    }
+
+    boolean relatedPackage = isRelatedClientPackage(cls.packageName, rootPackage);
+    boolean explicitClientRole = role != "general";
+    boolean explicitClientName = simpleNameLower.includes("client") || simpleNameLower.includes("service") ||
+        simpleNameLower.includes("admin") || simpleNameLower.includes("producer") ||
+        simpleNameLower.includes("consumer");
+
+    if explicitClientRole {
+        return relatedPackage || explicitClientName;
+    }
+
+    if !relatedPackage && !explicitClientName {
+        return false;
+    }
+
+    return cls.methods.length() >= 8 || score.totalScore >= 50.0d;
+}
+
+function isHelperClientLikeName(string simpleNameLower) returns boolean {
+    string[] helperTokens = ["builder", "config", "option", "request", "response", "result", "record",
+        "metadata", "context", "factory", "provider", "interceptor", "serializer", "deserializer",
+        "authenticator", "readable", "writable", "util", "helper"];
+    foreach string token in helperTokens {
+        if simpleNameLower.includes(token) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isRelatedClientPackage(string candidatePackage, string rootPackage) returns boolean {
+    if candidatePackage == rootPackage || candidatePackage.startsWith(string `${rootPackage}.`) ||
+        rootPackage.startsWith(string `${candidatePackage}.`) {
+        return true;
+    }
+
+    string candidatePrefix = getPackagePrefix(candidatePackage, 3);
+    string rootPrefix = getPackagePrefix(rootPackage, 3);
+    return candidatePrefix.length() > 0 && candidatePrefix == rootPrefix;
+}
+
+function getPackagePrefix(string packageName, int depth) returns string {
+    string[] parts = regex:split(packageName, "\\.");
+    int maxDepth = parts.length() < depth ? parts.length() : depth;
+    if maxDepth <= 0 {
+        return "";
+    }
+
+    string[] prefix = [];
+    foreach int i in 0 ..< maxDepth {
+        prefix.push(parts[i]);
+    }
+    return string:'join(".", ...prefix);
+}
+
+function inferClientRole(string simpleName) returns string {
+    string nameLower = simpleName.toLowerAscii();
+    if nameLower.includes("admin") || nameLower.includes("management") {
+        return "admin";
+    }
+    if nameLower.includes("producer") || nameLower.includes("publisher") || nameLower.includes("writer") {
+        return "producer";
+    }
+    if nameLower.includes("consumer") || nameLower.includes("subscriber") || nameLower.includes("reader") {
+        return "consumer";
+    }
+    return "general";
+}
+
+function printAnalyzerPlan(string jarPath, string outputDir, boolean quietMode) {
+    if quietMode {
+        return;
+    }
+
+    string sep = createAnalyzerSeparator("=", 70);
+    io:println(sep);
+    io:println("SDK Analysis Plan");
+    io:println(sep);
+    io:println(string `Source: ${jarPath}`);
+    io:println(string `Output Dir: ${outputDir}`);
+    io:println("");
+    io:println("Operations:");
+    io:println("  1. Extract and filter SDK classes");
+    io:println("  2. Identify root client and init pattern");
+    io:println("  3. Rank methods and generate metadata");
+    io:println(sep);
+}
+
+function printAnalyzerSummary(string metadataPath, int methods, decimal duration) {
+    string sep = createAnalyzerSeparator("=", 70);
+    io:println("");
+    io:println(sep);
+    io:println("✓ SDK Analysis Complete");
+    io:println(sep);
+    io:println(string `  • metadata: ${metadataPath}`);
+    io:println(string `  • methods extracted: ${methods}`);
+    io:println(string `  • duration: ${duration}s`);
+    io:println(sep);
+}
+
+function printAnalyzerStep(int stepNum, string title, boolean quietMode) {
+    if quietMode {
+        return;
+    }
+    string sep = createAnalyzerSeparator("-", 50);
+    io:println("");
+    io:println(string `Step ${stepNum}: ${title}`);
+    io:println(sep);
+}
+
+function createAnalyzerSeparator(string char, int length) returns string {
+    string[] chars = [];
+    int i = 0;
+    while i < length {
+        chars.push(char);
+        i += 1;
+    }
+    return string:'join("", ...chars);
 }
 
 # Check if a class is relevant for client identification
@@ -371,7 +635,7 @@ function buildConstructorSignature(ConstructorInfo constructor) returns string {
 function extractSdkVersion(string jarPath) returns string {
     string[] pathParts = regex:split(jarPath, "/");
     string filename = pathParts[pathParts.length() - 1];
-    
+
     // Remove .jar extension
     if filename.endsWith(".jar") {
         filename = filename.substring(0, filename.length() - 4);
@@ -384,7 +648,7 @@ function extractSdkVersion(string jarPath) returns string {
             return part;
         }
     }
-    
+
     return "unknown";
 }
 
@@ -422,7 +686,7 @@ public function analyzeJarWithJavaParserWrapper(string jarPath, AnalyzerConfig c
     ClassInfo[]|error res = parseJarFromReference(jarPath, config);
     if res is error {
         // Convert generic error to AnalyzerError alias
-        return <AnalyzerError> res;
+        return <AnalyzerError>res;
     }
     return res;
 }
@@ -436,7 +700,7 @@ public function analyzeJarWithJavaParserWrapper(string jarPath, AnalyzerConfig c
 public function analyzeJarWithDependencies(string jarPath, AnalyzerConfig config) returns ParsedJarResult|AnalyzerError {
     ParsedJarResult|error res = parseJarWithDependencies(jarPath, config);
     if res is error {
-        return <AnalyzerError> res;
+        return <AnalyzerError>res;
     }
     return res;
 }
@@ -505,7 +769,7 @@ function prettyPrintJson(json v, int indent) returns string {
     }
     // Arrays
     if v is json[] {
-        json[] arr = <json[]> v;
+        json[] arr = <json[]>v;
         if arr.length() == 0 {
             return "[]";
         }
@@ -524,12 +788,12 @@ function prettyPrintJson(json v, int indent) returns string {
 
     // Objects (maps)
     if v is map<json> {
-        map<json> m = <map<json>> v;
+        map<json> m = <map<json>>v;
         string[] keys = m.keys();
         if keys.length() == 0 {
             return "{}";
         }
-        
+
         // Filter out keys with null values that should be omitted
         string[] filteredKeys = [];
         string[] omitIfNullKeys = ["enumReference", "memberReference"];
@@ -548,11 +812,11 @@ function prettyPrintJson(json v, int indent) returns string {
                 filteredKeys.push(k);
             }
         }
-        
+
         if filteredKeys.length() == 0 {
             return "{}";
         }
-        
+
         string out = "{\n";
         foreach int i in 0 ..< filteredKeys.length() {
             string k = filteredKeys[i];
@@ -570,7 +834,7 @@ function prettyPrintJson(json v, int indent) returns string {
 
     // Primitives
     if v is string {
-        return "\"" + escapeJsonString(<string> v) + "\"";
+        return "\"" + escapeJsonString(<string>v) + "\"";
     }
     if v is boolean {
         return v.toString();
@@ -585,8 +849,6 @@ function prettyPrintJson(json v, int indent) returns string {
     // Fallback: use toString
     return v.toString();
 }
-
-
 
 # Write the list of all extracted classes to a text file for offline inspection
 #

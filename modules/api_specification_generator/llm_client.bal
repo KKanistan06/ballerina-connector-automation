@@ -55,7 +55,7 @@ function getAnthropicConfig(int maxTokens, boolean enableExtendedThinking,
 # + return - Full JSON response or error
 function callAnthropicAPI(AnthropicConfig config, string systemPrompt, string userPrompt) returns json|error {
     http:Client anthropicClient = check new ("https://api.anthropic.com", {
-        timeout: 1000
+        timeout: 120000
     });
 
     map<json> bodyMap = {
@@ -98,14 +98,14 @@ function callAnthropicAPI(AnthropicConfig config, string systemPrompt, string us
     }
 
     json responseBody = check response.getJsonPayload();
-    
+
     // Check if the response was truncated due to token limits
     json|error stopReason = responseBody.stop_reason;
     if stopReason is json && stopReason.toString() == "max_tokens" {
         return error(string `LLM response was truncated due to max_tokens limit (${config.maxTokens}). ` +
-                     "Increase maxTokens in GeneratorConfig or reduce SDK complexity.");
+                    "Increase maxTokens in GeneratorConfig or reduce SDK complexity.");
     }
-    
+
     return responseBody;
 }
 

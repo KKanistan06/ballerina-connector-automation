@@ -13,8 +13,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import ballerina/os;
 import ballerina/http;
+import ballerina/os;
 
 # Get Anthropic configuration from environment
 # + return - Anthropic configuration or error
@@ -23,10 +23,10 @@ function getAnthropicConfig() returns AnthropicConfiguration|error {
     if apiKey is () {
         return error("ANTHROPIC_API_KEY environment variable not set");
     }
-    
+
     return {
         apiKey: apiKey,
-        model: "claude-opus-4-1-20250805",
+        model: "claude-sonnet-4-6",
         maxTokens: 5000,
         temperature: 0,
         enableExtendedThinking: false
@@ -42,7 +42,7 @@ function callAnthropicAPI(AnthropicConfiguration config, string systemPrompt, st
     http:Client anthropicClient = check new ("https://api.anthropic.com", {
         timeout: 30
     });
-    
+
     map<json> bodyMap = {
         "model": config.model,
         "max_tokens": config.maxTokens,
@@ -55,7 +55,7 @@ function callAnthropicAPI(AnthropicConfiguration config, string systemPrompt, st
         ],
         "system": systemPrompt
     };
-    
+
     // Add extended thinking if enabled
     if config.enableExtendedThinking {
         bodyMap["thinking"] = {
@@ -63,17 +63,17 @@ function callAnthropicAPI(AnthropicConfiguration config, string systemPrompt, st
             "budget_tokens": 5000
         };
     }
-    
+
     json requestBody = bodyMap;
-    
+
     map<string> headers = {
         "Content-Type": "application/json",
         "x-api-key": config.apiKey,
         "anthropic-version": "2023-06-01"
     };
-    
+
     http:Response response = check anthropicClient->post("/v1/messages", requestBody, headers);
-    
+
     if response.statusCode != 200 {
         string|error responseText = response.getTextPayload();
         if responseText is string {
@@ -81,7 +81,7 @@ function callAnthropicAPI(AnthropicConfiguration config, string systemPrompt, st
         }
         return error(string `Anthropic API error: ${response.statusCode}`);
     }
-    
+
     json responseBody = check response.getJsonPayload();
     return responseBody;
 }

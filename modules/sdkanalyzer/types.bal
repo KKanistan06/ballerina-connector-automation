@@ -107,6 +107,10 @@ public type AnalyzerConfig record {|
     int methodsToList = 40;
     # Optional path to a javadoc JAR file for extracting descriptions
     string? javadocPath = ();
+    # Optional client role preference (for example: admin, producer, consumer)
+    string? clientRoleHint = ();
+    # Optional fully qualified or simple class name to force as root client
+    string? clientClassHint = ();
 |};
 
 # Result of parsing a JAR with its dependency information
@@ -468,6 +472,8 @@ public type FieldInfo record {|
     boolean isFinal;
     # Javadoc comment (if available)
     string? javadoc;
+    # Literal value associated with enum-like/enum constants (if available)
+    string? literalValue = ();
     # Specifies whether this field is deprecated
     boolean isDeprecated;
 |};
@@ -618,6 +624,24 @@ public type RootClientInfo record {|
     MethodInfo[] methods;
 |};
 
+# Selected client candidate metadata (for multi-client SDKs)
+public type SelectedClientInfo record {|
+    # Fully qualified class name
+    string className;
+    # Package name
+    string packageName;
+    # Simple class name
+    string simpleName;
+    # Inferred role (e.g., admin, producer, consumer, general)
+    string role;
+    # LLM score used for ranking
+    decimal score;
+    # Whether this candidate is selected as root client
+    boolean isRoot = false;
+    # Short reasoning text from scoring breakdown
+    string reason = "";
+|};
+
 # Supporting class information
 public type SupportingClassInfo record {|
     # Fully qualified class name
@@ -663,7 +687,7 @@ public type AnalysisSummary record {|
 |};
 
 # Enum value information
-## Enum metadata for referenced enum types
+# # Enum metadata for referenced enum types
 public type EnumMetadata record {|
     # Simple enum class name
     string simpleName;
@@ -680,6 +704,8 @@ public type StructuredSDKMetadata record {|
     ClientInitPattern clientInit;
     # Root client class details
     RootClientInfo rootClient;
+    # Additional selected clients for multi-client SDKs (optional)
+    SelectedClientInfo[]? selectedClients = ();
     # Member classes referenced in List/Map types (keyed by fully qualified class name)
     map<MemberClassInfo> memberClasses;
     # Enum types referenced in parameters (keyed by fully qualified enum class name)
