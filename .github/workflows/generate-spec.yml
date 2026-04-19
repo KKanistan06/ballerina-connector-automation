@@ -58,13 +58,10 @@ jobs:
           cd ../../..
 
       # =========================
-      # Clean + Pull dependencies
+      # Clean project
       # =========================
       - name: Clean project
         run: bal clean
-
-      - name: Pull dependencies
-        run: bal pull
 
       # =========================
       # Build Project
