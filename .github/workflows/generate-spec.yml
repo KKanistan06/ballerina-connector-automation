@@ -10,6 +10,7 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  PROJECT_ROOT: ${{ github.workspace }}
 
 concurrency:
   group: generate-spec-${{ inputs.dataset_key }}
@@ -71,35 +72,35 @@ jobs:
         run: bal build
 
       # =========================
-      # 🔥 FIX: FORCE ABSOLUTE OUTPUT PATH
+      # FIX: enforce correct working directory
       # =========================
       - name: Run analyze + generate
         run: |
-          export SPEC_OUTPUT_DIR="${GITHUB_WORKSPACE}/modules/api_specification_generator/spec-output"
+          cd $GITHUB_WORKSPACE
+          echo "Running in: $(pwd)"
 
-          echo "Using output dir: $SPEC_OUTPUT_DIR"
-
-          mkdir -p "$SPEC_OUTPUT_DIR"
+          export PROJECT_ROOT=$GITHUB_WORKSPACE
 
           bal run -- analyze ${{ inputs.dataset_key }}
           bal run -- generate ${{ inputs.dataset_key }}
 
       # =========================
-      # 🔥 FIX: Use absolute path validation
+      # FIX: robust file discovery (NO assumptions)
       # =========================
       - name: Locate API spec file
         run: |
-          FILE="${GITHUB_WORKSPACE}/modules/api_specification_generator/spec-output/${{ inputs.dataset_key }}_spec.bal"
+          echo "Searching for generated spec file..."
 
-          echo "Checking file: $FILE"
+          FILE=$(find $GITHUB_WORKSPACE -type f -name "*${{ inputs.dataset_key }}*_spec.bal" | head -n 1)
 
-          echo "Listing output directory:"
-          ls -R "${GITHUB_WORKSPACE}/modules/api_specification_generator/spec-output" || true
-
-          if [ ! -f "$FILE" ]; then
-            echo "❌ Spec file NOT found at expected location"
+          if [ -z "$FILE" ]; then
+            echo "❌ Spec file not found anywhere!"
+            echo "Dumping workspace:"
+            find $GITHUB_WORKSPACE -type f | grep spec || true
             exit 1
           fi
+
+          echo "Found: $FILE"
 
           mkdir -p spec
           cp "$FILE" spec/api_spec.bal
