@@ -9,6 +9,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
 concurrency:
   group: generate-spec-${{ inputs.dataset_key }}
@@ -70,7 +71,7 @@ jobs:
         run: bal build
 
       # =========================
-      # Run CLI Commands
+      # Run CLI Commands (FIXED ENV HERE)
       # =========================
       - name: Run analyze + generate
         run: |
