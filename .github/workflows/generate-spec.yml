@@ -65,36 +65,41 @@ jobs:
         run: bal clean
 
       # =========================
-      # Build Project
+      # Build project
       # =========================
       - name: Build project
         run: bal build
 
       # =========================
-      # Run analysis
+      # 🔥 FIX: FORCE ABSOLUTE OUTPUT PATH
       # =========================
       - name: Run analyze + generate
         run: |
+          export SPEC_OUTPUT_DIR="${GITHUB_WORKSPACE}/modules/api_specification_generator/spec-output"
+
+          echo "Using output dir: $SPEC_OUTPUT_DIR"
+
+          mkdir -p "$SPEC_OUTPUT_DIR"
+
           bal run -- analyze ${{ inputs.dataset_key }}
           bal run -- generate ${{ inputs.dataset_key }}
 
       # =========================
-      # 🔥 FIXED: dynamically find generated spec file
+      # 🔥 FIX: Use absolute path validation
       # =========================
       - name: Locate API spec file
         run: |
-          echo "Searching for generated spec file..."
+          FILE="${GITHUB_WORKSPACE}/modules/api_specification_generator/spec-output/${{ inputs.dataset_key }}_spec.bal"
 
-          FILE=$(find modules/api_specification_generator/spec-output -name "*${{ inputs.dataset_key }}*_spec.bal" | head -n 1)
+          echo "Checking file: $FILE"
 
-          if [ -z "$FILE" ]; then
-            echo "❌ No spec file found!"
-            echo "Dumping full directory:"
-            find modules/api_specification_generator/spec-output || true
+          echo "Listing output directory:"
+          ls -R "${GITHUB_WORKSPACE}/modules/api_specification_generator/spec-output" || true
+
+          if [ ! -f "$FILE" ]; then
+            echo "❌ Spec file NOT found at expected location"
             exit 1
           fi
-
-          echo "Found file: $FILE"
 
           mkdir -p spec
           cp "$FILE" spec/api_spec.bal
