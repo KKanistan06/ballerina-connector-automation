@@ -72,20 +72,18 @@ jobs:
         run: bal build
 
       # =========================
-      # FIX: enforce correct working directory
+      # Run analysis
       # =========================
       - name: Run analyze + generate
         run: |
           cd $GITHUB_WORKSPACE
-          echo "Running in: $(pwd)"
-
           export PROJECT_ROOT=$GITHUB_WORKSPACE
 
           bal run -- analyze ${{ inputs.dataset_key }}
           bal run -- generate ${{ inputs.dataset_key }}
 
       # =========================
-      # FIX: robust file discovery (NO assumptions)
+      # Locate generated spec file
       # =========================
       - name: Locate API spec file
         run: |
@@ -94,8 +92,7 @@ jobs:
           FILE=$(find $GITHUB_WORKSPACE -type f -name "*${{ inputs.dataset_key }}*_spec.bal" | head -n 1)
 
           if [ -z "$FILE" ]; then
-            echo "❌ Spec file not found anywhere!"
-            echo "Dumping workspace:"
+            echo "❌ Spec file not found!"
             find $GITHUB_WORKSPACE -type f | grep spec || true
             exit 1
           fi
@@ -116,36 +113,25 @@ jobs:
           path: spec-repo
 
       # =========================
-      # Commit + Push
+      # Copy spec into repo
       # =========================
-      - name: Commit API spec
+      - name: Copy spec into repo
         run: |
           cp -r spec/* spec-repo/
 
-          cd spec-repo
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-
-          BRANCH="auto/spec-${{ inputs.dataset_key }}"
-          git checkout -b $BRANCH || git checkout $BRANCH
-
-          git add .
-          git commit -m "Auto API spec for ${{ inputs.dataset_key }}" || echo "No changes"
-          git push origin $BRANCH --force
-
       # =========================
-      # Create PR
+      # Create Pull Request (ONLY PR HANDLING)
       # =========================
       - name: Create PR
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GH_PAT }}
-          commit-message: "Auto API spec for ${{ inputs.dataset_key }}"
+          path: spec-repo
           branch: auto/spec-${{ inputs.dataset_key }}
+          base: main
+          commit-message: "Auto API spec for ${{ inputs.dataset_key }}"
           title: "API Spec: ${{ inputs.dataset_key }}"
           body: |
             This PR contains the auto-generated API specification.
 
             Dataset: ${{ inputs.dataset_key }}
-          base: main
-          path: spec-repo
