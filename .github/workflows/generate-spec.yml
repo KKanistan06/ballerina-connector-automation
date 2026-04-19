@@ -28,10 +28,43 @@ jobs:
           fetch-depth: 0
 
       # =========================
-      # Setup Ballerina
+      # Setup Java 21 (REQUIRED)
       # =========================
-      - name: Setup Ballerina
-        uses: ballerina-platform/setup-ballerina@v1
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # =========================
+      # Install EXACT Ballerina version (CRITICAL FIX)
+      # =========================
+      - name: Install Ballerina 2201.13.1
+        run: |
+          curl -L https://dist.ballerina.io/downloads/2201.13.1/ballerina-2201.13.1-swan-lake-linux-x64.deb -o ballerina.deb
+          sudo dpkg -i ballerina.deb
+
+      - name: Verify Ballerina version
+        run: bal version
+
+      # =========================
+      # Build native Java module (CRITICAL)
+      # =========================
+      - name: Build native Java module
+        run: |
+          cd modules/sdkanalyzer/native
+          chmod +x gradlew
+          ./gradlew build
+          cd ../../..
+
+      # =========================
+      # Clean + Pull dependencies
+      # =========================
+      - name: Clean project
+        run: bal clean
+
+      - name: Pull dependencies
+        run: bal pull
 
       # =========================
       # Build Project
@@ -61,13 +94,40 @@ jobs:
           cp output/api-spec/api_spec.bal spec/
 
       # =========================
-      # Create PR to Spec Repo
+      # Checkout Target Spec Repo
       # =========================
-      - name: Create PR to spec repo
+      - name: Checkout spec repo
+        uses: actions/checkout@v4
+        with:
+          repository: KKanistan06/generated-ballerina-spec
+          token: ${{ secrets.GH_PAT }}
+          path: spec-repo
+
+      # =========================
+      # Commit + Push Branch
+      # =========================
+      - name: Commit API spec
+        run: |
+          cp -r spec/* spec-repo/
+
+          cd spec-repo
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+
+          BRANCH="auto/spec-${{ inputs.dataset_key }}"
+          git checkout -b $BRANCH || git checkout $BRANCH
+
+          git add .
+          git commit -m "Auto API spec for ${{ inputs.dataset_key }}" || echo "No changes"
+          git push origin $BRANCH --force
+
+      # =========================
+      # Create Pull Request
+      # =========================
+      - name: Create PR
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GH_PAT }}
-          path: spec
           commit-message: "Auto API spec for ${{ inputs.dataset_key }}"
           branch: auto/spec-${{ inputs.dataset_key }}
           title: "API Spec: ${{ inputs.dataset_key }}"
@@ -75,7 +135,5 @@ jobs:
             This PR contains the auto-generated API specification.
 
             Dataset: ${{ inputs.dataset_key }}
-
           base: main
-          push-to-fork: false
-          repository: KKanistan06/generated-ballerina-spec
+          path: spec-repo
