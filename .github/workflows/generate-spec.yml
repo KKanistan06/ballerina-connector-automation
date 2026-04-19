@@ -8,7 +8,6 @@ on:
         required: true
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
   PROJECT_ROOT: ${{ github.workspace }}
 
@@ -22,7 +21,7 @@ jobs:
 
     steps:
       # =========================
-      # Checkout CLI Repo
+      # Checkout CLI repo
       # =========================
       - name: Checkout CLI repo
         uses: actions/checkout@v4
@@ -37,9 +36,9 @@ jobs:
           java-version: 21
 
       # =========================
-      # Install Ballerina
+      # Install Ballerina 2201.13.1
       # =========================
-      - name: Install Ballerina 2201.13.1
+      - name: Install Ballerina
         run: |
           curl -L https://dist.ballerina.io/downloads/2201.13.1/ballerina-2201.13.1-swan-lake-linux-x64.deb -o ballerina.deb
           sudo dpkg -i ballerina.deb
@@ -50,7 +49,7 @@ jobs:
       # =========================
       # Build native module
       # =========================
-      - name: Build native Java module
+      - name: Build native module
         run: |
           cd modules/sdkanalyzer/native
           chmod +x gradlew
@@ -67,9 +66,9 @@ jobs:
         run: bal build
 
       # =========================
-      # Run pipeline (IMPORTANT)
+      # Run ANALYZE + GENERATE
       # =========================
-      - name: Run analyze + generate
+      - name: Run pipeline
         run: |
           export PROJECT_ROOT=$GITHUB_WORKSPACE
 
@@ -77,37 +76,44 @@ jobs:
           bal run -- generate ${{ inputs.dataset_key }}
 
       # =========================
-      # Collect ALL required artifacts
+      # Collect ALL outputs
       # =========================
-      - name: Collect artifacts
+      - name: Collect outputs
         run: |
           DATASET=${{ inputs.dataset_key }}
 
-          mkdir -p dataset/$DATASET
+          echo "📦 Collecting outputs for $DATASET"
 
-          echo "🔍 Collecting metadata..."
-          META=$(find . -name "*${DATASET}*metadata.json" | head -n 1)
+          mkdir -p artifacts
 
-          echo "🔍 Collecting IR..."
-          IR=$(find . -name "*${DATASET}*ir*.json" | head -n 1)
-
-          echo "🔍 Collecting spec..."
-          SPEC=$(find . -name "*${DATASET}*_spec.bal" | head -n 1)
-
-          if [ -z "$META" ] || [ -z "$IR" ] || [ -z "$SPEC" ]; then
-            echo "❌ Missing required artifacts"
-            echo "META=$META"
-            echo "IR=$IR"
-            echo "SPEC=$SPEC"
+          # Metadata
+          META=$(find . -name "${DATASET}-metadata.json" | head -n 1)
+          if [ -z "$META" ]; then
+            echo "❌ metadata.json missing!"
             exit 1
           fi
+          cp "$META" artifacts/
 
-          cp "$META" dataset/$DATASET/metadata.json
-          cp "$IR" dataset/$DATASET/ir.json
-          cp "$SPEC" dataset/$DATASET/api_spec.bal
+          # IR
+          IR=$(find . -name "${DATASET}-ir.json" | head -n 1)
+          if [ -z "$IR" ]; then
+            echo "❌ IR json missing!"
+            exit 1
+          fi
+          cp "$IR" artifacts/
+
+          # Spec
+          SPEC=$(find . -name "*${DATASET}*_spec.bal" | head -n 1)
+          if [ -z "$SPEC" ]; then
+            echo "❌ Spec file missing!"
+            exit 1
+          fi
+          cp "$SPEC" artifacts/api_spec.bal
+
+          echo "✅ All artifacts collected"
 
       # =========================
-      # Checkout spec repo
+      # Checkout target repo
       # =========================
       - name: Checkout spec repo
         uses: actions/checkout@v4
@@ -117,12 +123,14 @@ jobs:
           path: spec-repo
 
       # =========================
-      # Copy dataset into repo
+      # Copy ALL artifacts
       # =========================
-      - name: Copy dataset
+      - name: Copy artifacts to repo
         run: |
-          mkdir -p spec-repo/datasets
-          cp -r dataset/* spec-repo/datasets/
+          DATASET=${{ inputs.dataset_key }}
+
+          mkdir -p spec-repo/$DATASET
+          cp -r artifacts/* spec-repo/$DATASET/
 
       # =========================
       # Create PR
@@ -134,13 +142,12 @@ jobs:
           path: spec-repo
           branch: auto/spec-${{ inputs.dataset_key }}
           base: main
-          commit-message: "Auto API spec + metadata for ${{ inputs.dataset_key }}"
-          title: "Dataset: ${{ inputs.dataset_key }}"
+          commit-message: "Auto API spec + metadata + IR for ${{ inputs.dataset_key }}"
+          title: "API Spec Bundle: ${{ inputs.dataset_key }}"
           body: |
-            This PR includes:
-
+            Includes:
             - API Spec
             - Metadata JSON
-            - Intermediate Representation (IR)
+            - IR JSON
 
             Dataset: ${{ inputs.dataset_key }}
