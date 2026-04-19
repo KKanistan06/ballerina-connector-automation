@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0
 
       # =========================
-      # Setup Java 21 (REQUIRED)
+      # Setup Java 21
       # =========================
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -38,7 +38,7 @@ jobs:
           java-version: 21
 
       # =========================
-      # Install EXACT Ballerina version (CRITICAL FIX)
+      # Install Ballerina
       # =========================
       - name: Install Ballerina 2201.13.1
         run: |
@@ -49,7 +49,7 @@ jobs:
         run: bal version
 
       # =========================
-      # Build native Java module (CRITICAL)
+      # Build native module
       # =========================
       - name: Build native Java module
         run: |
@@ -71,7 +71,7 @@ jobs:
         run: bal build
 
       # =========================
-      # Run CLI Commands (FIXED ENV HERE)
+      # Run CLI Commands
       # =========================
       - name: Run analyze + generate
         run: |
@@ -79,20 +79,22 @@ jobs:
           bal run -- generate ${{ inputs.dataset_key }}
 
       # =========================
-      # Validate + Copy API Spec
+      # FIXED: Validate correct output file
       # =========================
       - name: Prepare API spec
         run: |
-          if [ ! -f output/api-spec/api_spec.bal ]; then
-            echo "❌ api_spec.bal not found!"
+          FILE="modules/api_specification_generator/spec-output/${{ inputs.dataset_key }}_spec.bal"
+
+          if [ ! -f "$FILE" ]; then
+            echo "❌ Spec file not found: $FILE"
             exit 1
           fi
 
           mkdir -p spec
-          cp output/api-spec/api_spec.bal spec/
+          cp "$FILE" spec/api_spec.bal
 
       # =========================
-      # Checkout Target Spec Repo
+      # Checkout Target Repo
       # =========================
       - name: Checkout spec repo
         uses: actions/checkout@v4
@@ -102,7 +104,7 @@ jobs:
           path: spec-repo
 
       # =========================
-      # Commit + Push Branch
+      # Commit + Push
       # =========================
       - name: Commit API spec
         run: |
@@ -120,7 +122,7 @@ jobs:
           git push origin $BRANCH --force
 
       # =========================
-      # Create Pull Request
+      # Create PR
       # =========================
       - name: Create PR
         uses: peter-evans/create-pull-request@v6
