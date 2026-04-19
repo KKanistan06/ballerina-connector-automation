@@ -26,7 +26,7 @@ functions, enums, and connection fields needed to build a Ballerina connector cl
 
 <output_schema>
 You MUST return a single, valid JSON object conforming exactly to this schema.
-No other text, no explanation, no markdown – only the raw JSON object.
+No other text, no explanation, no markdown only the raw JSON object.
 
 {
   "sdkName":          string,          // SDK display name (e.g. "S3 SDK")
@@ -36,7 +36,7 @@ No other text, no explanation, no markdown – only the raw JSON object.
   "connectionFields": IRField[],       // Fields for the ConnectionConfig record
   "functions":        IRFunction[],    // Remote functions on the client
   "structures":       IRStructure[],   // Complex request/response/support types
-  "enums":            IREnum[],        // Enumeration types
+  "enums":            IREnum[],        // Always output [] — enums are injected programmatically
   "collections":      IRCollection[]  // Named collection aliases (optional)
 }
 
@@ -149,52 +149,14 @@ RULE 4 — RETURN TYPES
     - Map the returnType using the Java type mapping rules.
     - IRReturn: { type: "<mappedType>", description: "The result", referenceType: null }
 
-RULE 5 — ENUM HANDLING (MANDATORY — every enum must be fully populated)
-  For every enum in the metadata enums map:
-    - name: use simpleName
-    - For each value string, strip a trailing " - default" annotation to get the clean value.
-    - NORMALIZE the clean value to a consistent format BEFORE converting to member name:
-        IF the value is all uppercase (e.g. "STANDARD", "AES256", "ENABLED"):
-            Keep as-is → member = STANDARD, value = STANDARD
-        ELSE IF the value contains hyphens or is lowercase (e.g. "standard", "us-east-1", "public-read"):
-            Normalize to lowercase, keep hyphens → member derived from normalized value
-            Examples: "standard" → value = "standard", member = STANDARD
-                     "public-read" → value = "public-read", member = PUBLIC_READ
-                     "us-east-1" → value = "us-east-1", member = US_EAST_1
-        ELSE IF the value is CamelCase (e.g. "Enabled", "VisibilityTimeout"):
-            Convert to lowercase with hyphens → member = ENABLED, value = "enabled"
-                                              → member = VISIBILITY_TIMEOUT, value = "visibility-timeout"
-    - Convert the normalized value to SCREAMING_SNAKE_CASE for the "member" field:
-        Replace non-alphanumeric sequences (including hyphens) with underscore, uppercase everything.
-        Examples:  "private" → PRIVATE,  "public-read" → PUBLIC_READ,
-                   "aws:kms" → AWS_KMS,   "AES256" → AES256,
-                   "enabled" → ENABLED,   "visibility-timeout" → VISIBILITY_TIMEOUT
-    - Keep the clean normalized value string as the "value" field.
-    - FILTER only these sentinel values: UNKNOWN_TO_SDK_VERSION, SDK_UNKNOWN, UNKNOWN.
-      Keep ALL other values, including rarely used or deprecated ones.
-    - If a value had " - default" suffix, note its member name (the spec_builder uses
-      it when the field kind is Default).
-    - You MUST include every enum from the metadata enums map in the output enums array,
-      with ALL its values populated. An enum entry with an empty values array is ONLY
-      acceptable for enums that have zero constants in the metadata.
-    - GLOBAL UNIQUENESS (MANDATORY): Ballerina treats enum member names globally across
-      the entire file. Therefore, ALL enum member names across EVERY enum in the output
-      MUST be globally unique. If the same base member name would appear in multiple enums
-      (e.g., "ENABLED" in BucketVersioningStatus, MFADeleteStatus, and MFADelete):
-        * Identify all conflicting member names that appear in more than one enum.
-        * For EACH conflicting enum, append a unique suffix to the base member name ONLY
-          for the conflicting members (unconflicted members keep their original names).
-        * Use suffixes derived from the enum name in SCREAMING_SNAKE_CASE:
-          Examples:
-            - BucketVersioningStatus.ENABLED → BUCKET_VERSIONING_ENABLED
-            - MFADeleteStatus.ENABLED → MFA_DELETE_ENABLED  
-            - MFADelete.ENABLED → MFA_DELETE_ENABLED (use abbreviated enum name if needed)
-            - ObjectStorageClass.STANDARD → OBJECTSTORAGE_STANDARD
-            - StorageClass.STANDARD → STORAGE_STANDARD
-        * Keep the "value" field unchanged - only the "member" field gets the suffix.
-        * When determining if names conflict, first generate all member names, collect
-          them, identify duplicates across enum boundaries, then apply suffixes only
-          to the conflicting ones in conflicting enums.
+RULE 5 — ENUM HANDLING (PROGRAMMATIC — do NOT generate enum entries)
+  Enum extraction is handled deterministically by the calling code after your response
+  is processed. The exact string values already stored in the metadata enums map are
+  used as-is — no normalisation is applied by the LLM.
+
+  OUTPUT REQUIREMENT: You MUST output "enums": [] (an empty array).
+  Do NOT generate any IREnum entries. Any enum entries you produce will be discarded
+  and replaced by the programmatically extracted entries.
 
 RULE 6 — MEMBER CLASS TO STRUCTURE MAPPING
   For each entry in the metadata memberClasses map:
@@ -248,21 +210,15 @@ RULE 8 — COMPLETENESS (MANDATORY — perform a full sweep before returning)
     Skip if it is a Ballerina built-in:
       string, int, float, boolean, byte, decimal, anydata, json, xml,
       byte[], anydata[], map<anydata>, map<string>, map<json>, "()", void
-    Otherwise: it MUST exist in structures, enums, or collections.
-    If it does NOT exist, add it:
-      - Name ends with Mode, Type, Status, Class, Algorithm, ACL, Payer, Encryption,
-        Protocol, Access, Permission, Tier, or is in the metadata enums map
-        → add to enums with all known values (or empty values array if none known)
-      - Name is a known AWS/SDK infrastructure type with no domain fields
-        (Region, SdkHttpClient, AwsCredentialsProvider, SqsEndpointProvider,
-         SqsAuthSchemeProvider, AuthScheme, S3EndpointProvider, Path,
-         AwsRequestSigner, etc.)
-        → add a minimal empty structure entry: {"name":"X","kind":"STRUCTURE","fields":[]}
-      - All other missing types → add to structures with any known fields,
-        or an empty structure if no fields are known
+    NOTE: enum types are handled programmatically and will be injected after your
+    response is processed. Do NOT add missing types to the enums array.
+    If a non-enum type is missing from structures or collections, add it:
+      - Add to structures with any known fields, or an empty structure if no fields
+        are known: {"name":"X","kind":"STRUCTURE","fields":[]}
+      - For collection aliases add to collections as appropriate.
 
-  NEVER return an IR where any type name is used but not defined in
-  structures, enums, or collections.
+  NEVER return an IR where any non-enum type name is used but not defined in
+  structures or collections.
 
 RULE 9 — SKIP METHODS
   Skip methods that are: static, deprecated, abstract, or overloaded variants

@@ -159,7 +159,7 @@ function generateSingleExampleReadme(string examplePath, string exampleDirName, 
 
     string content = check processTemplate("example_specific_template.md", data);
 
-    string readmeFileName = formatExampleName(exampleDirName) + ".md";
+    string readmeFileName = "README.md";
     string outputPath = examplePath + "/" + readmeFileName;
 
     check writeOutput(content, outputPath);
@@ -412,7 +412,37 @@ function simpleReplace(string text, string searchFor, string replaceWith) return
 }
 
 function writeOutput(string content, string outputPath) returns error? {
-    check io:fileWriteString(outputPath, content);
+    string normalized = normalizeGeneratedMarkdown(content);
+    check io:fileWriteString(outputPath, normalized);
+}
+
+function normalizeGeneratedMarkdown(string content) returns string {
+    string[] lines = regexp:split(re `\n`, content);
+    string[] cleaned = [];
+    string previousHeading = "";
+
+    foreach string line in lines {
+        string trimmed = line.trim();
+        boolean isHeading = trimmed.startsWith("#");
+
+        if isHeading {
+            if previousHeading == trimmed {
+                continue;
+            }
+            previousHeading = trimmed;
+        } else if trimmed.length() > 0 {
+            previousHeading = "";
+        }
+
+        cleaned.push(line);
+    }
+
+    string output = string:'join("\n", ...cleaned);
+
+    output = simpleReplace(output, "\n\n\n", "\n\n");
+    output = simpleReplace(output, "\n\n\n", "\n\n");
+
+    return output.trim() + "\n";
 }
 
 function createTemplateData(ConnectorMetadata metadata) returns TemplateData {

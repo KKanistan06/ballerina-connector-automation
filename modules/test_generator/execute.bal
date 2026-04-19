@@ -51,24 +51,8 @@ public function executeTestGen(string... args) returns error? {
         io:println("✓ AI service initialized");
     }
 
-    // Step 1: Setup mock server module
-    printStepHeader(1, "Setting up mock server module", quietMode);
-    error? mockSetupResult = setupMockServerModule(connectorPath, quietMode);
-    if mockSetupResult is error {
-        io:println(string `✗ Mock server setup failed: ${mockSetupResult.message()}`);
-        return mockSetupResult;
-    }
-    io:println("✓ Mock server module set up");
-
-    // Step 2: Generate mock server implementation
-    printStepHeader(2, "Generating mock server implementation", quietMode);
-    error? mockGenResult = generateMockServer(connectorPath, specPath, quietMode);
-    if mockGenResult is error {
-        io:println(string `✗ Mock server generation failed: ${mockGenResult.message()}`);
-        return mockGenResult;
-    }
-
-    // Extract operation IDs that were used for mock server generation
+    // Step 1: Select operations for test generation when specs are large
+    printStepHeader(1, "Preparing live test operation scope", quietMode);
     int operationCount = check countOperationsInSpec(specPath);
     string[]? selectedOperationIds = ();
 
@@ -89,22 +73,10 @@ public function executeTestGen(string... args) returns error? {
         }
     }
 
-    io:println("✓ Mock server implementation generated");
+    io:println("✓ Live test operation scope prepared");
 
-    string mockServerPath = connectorPath + "/ballerina/modules/mock.server/mock_server.bal";
-    string typesPath = connectorPath + "/ballerina/modules/mock.server/types.bal";
-
-    // Step 3: Complete mock server template
-    printStepHeader(3, "Completing mock server template", quietMode);
-    error? completeResult = completeMockServer(mockServerPath, typesPath, quietMode);
-    if completeResult is error {
-        io:println(string `✗ Mock server completion failed: ${completeResult.message()}`);
-        return completeResult;
-    }
-    io:println("✓ Mock server template completed");
-
-    // Step 4: Generate tests
-    printStepHeader(4, "Generating test file", quietMode);
+    // Step 2: Generate tests
+    printStepHeader(2, "Generating live test file", quietMode);
     error? testGenResult = generateTestFile(connectorPath, selectedOperationIds, quietMode);
     if testGenResult is error {
         io:println(string `✗ Test file generation failed: ${testGenResult.message()}`);
@@ -112,8 +84,8 @@ public function executeTestGen(string... args) returns error? {
     }
     io:println("✓ Test file generated");
 
-    // Step 5: Fix all compilation errors related to tests
-    printStepHeader(5, "Fixing compilation errors", quietMode);
+    // Step 3: Fix all compilation errors related to tests
+    printStepHeader(3, "Fixing compilation errors", quietMode);
     error? fixResult = fixTestFileErrors(connectorPath, quietMode);
     if fixResult is error {
         io:println(string `⚠  Some compilation errors remain: ${fixResult.message()}`);
@@ -141,11 +113,9 @@ function printTestGenerationPlan(string connectorPath, string specPath, boolean 
     io:println(string `Spec: ${specPath}`);
     io:println("");
     io:println("Operations:");
-    io:println("  1. Set up mock server module");
-    io:println("  2. Generate mock server implementation");
-    io:println("  3. Complete mock server template with AI");
-    io:println("  4. Generate comprehensive test file");
-    io:println("  5. Fix compilation errors automatically");
+    io:println("  1. Prepare live operation scope");
+    io:println("  2. Generate live test file");
+    io:println("  3. Fix compilation errors automatically");
     io:println(sep);
 }
 
@@ -169,14 +139,13 @@ function printTestGenerationSummary(string connectorPath, boolean quietMode) {
     io:println(sep);
     io:println("");
     io:println("Generated Files:");
-    io:println(string `  • ${connectorPath}/ballerina/modules/mock.server/`);
     io:println(string `  • ${connectorPath}/ballerina/tests/test.bal`);
 
     if !quietMode {
         io:println("");
         io:println("What was created:");
-        io:println("  • Mock server module with AI-generated responses");
-        io:println("  • Comprehensive test suite covering key operations");
+        io:println("  • Live server test suite using generated Ballerina client");
+        io:println("  • Runtime credential/env gating for live tests");
         io:println("  • Automated compilation error fixes");
     }
 
@@ -248,8 +217,8 @@ function printUsage() {
     io:println("  ANTHROPIC_API_KEY    Required for AI-powered generation");
     io:println("");
     io:println("FEATURES");
-    io:println("  • AI-generated mock servers with realistic responses");
-    io:println("  • Comprehensive test suites covering key operations");
+    io:println("  • AI-generated live test suites using connector client");
+    io:println("  • Runtime credential-gated live test execution");
     io:println("  • Automatic compilation error detection and fixing");
     io:println("  • Step-by-step confirmation prompts");
     io:println("  • CI/CD friendly with auto-confirm mode");

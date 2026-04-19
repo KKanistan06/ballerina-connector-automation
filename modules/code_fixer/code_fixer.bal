@@ -7,7 +7,9 @@ import ballerina/os;
 
 configurable int maxIterations = 3;
 configurable string fixerModel = "claude-sonnet-4-6";
-configurable int fixerMaxTokens = 8192;
+configurable int fixerMaxTokens = 16384;
+configurable boolean enableLLMResponseLogs = false;
+configurable string llmResponseLogDirName = ".code_fixer_llm_logs";
 
 function isAIServiceInitialized() returns boolean {
     string? apiKey = os:getEnv("ANTHROPIC_API_KEY");
@@ -616,69 +618,130 @@ public function fixFileWithLLM(string projectPath, string filePath, CompilationE
 
     string language = inferErrorLanguage(errors);
     if language == "java" {
+        // === Phase 1: Try deterministic (pattern-based) fixes first — no LLM needed ===
+        string|() deterministicCandidate = applyDeterministicJavaCompileFixes(fileContent, errors);
+        if deterministicCandidate is string {
+            error? deterministicValidationError = validateJavaFixCandidate(fileContent, <string>deterministicCandidate,
+                filePath, errors.length());
+            if deterministicValidationError is () {
+                if !quietMode {
+                    io:println(string `  ✓ Fixed ${filePath} using deterministic pattern`);
+                }
+                return {
+                    success: true,
+                    fixedCode: <string>deterministicCandidate,
+                    explanation: "Fixed using deterministic Java compile fallback"
+                };
+            }
+        }
+
+        // === Phase 2: LLM-based targeted patch (JSON edit operations) ===
         int attempt = 1;
         int maxJavaAttempts = 3;
-        string lastCandidate = "";
-        error lastValidationError = error("Java fix validation failed");
+        string lastValidationFailure = "";
+        string lastRawResponse = "";
 
         while attempt <= maxJavaAttempts {
-            string prompt = attempt == 1
-                ? createJavaFixPrompt(fileContent, errors, filePath)
-                : createJavaRetryFixPrompt(fileContent, errors, filePath, lastValidationError.message(), lastCandidate,
-                    attempt);
+            string prompt = createJavaFixPrompt(fileContent, errors, filePath, lastValidationFailure,
+                lastRawResponse, attempt);
 
             string|error llmResponse = callAI(prompt);
             if llmResponse is error {
                 if !quietMode {
-                    io:println(string `  ✗ AI failed to generate fix for ${filePath}`);
+                    io:println(string `  ✗ AI call failed for ${filePath}: ${llmResponse.message()}`);
                 }
-                return error(string `LLM failed to generate fix: ${llmResponse.message()}`);
+                return error(string `LLM call failed: ${llmResponse.message()}`);
             }
 
-            string normalizedResponse = normalizeCodeResponse(llmResponse);
-            error? javaValidationError = validateJavaFixCandidate(fileContent, normalizedResponse, filePath,
+            error? rawLogError = writeLLMResponseLog(projectPath, filePath, attempt, "raw-response", llmResponse,
+                quietMode);
+            if rawLogError is error && !quietMode {
+                io:println(string `  ⚠  Log write failed: ${rawLogError.message()}`);
+            }
+
+            // Parse JSON edit operations from LLM response
+            string normalizedJson = normalizeJsonResponse(llmResponse);
+            JavaEditOperation[]|error editOps = parseJavaEditOperations(normalizedJson);
+            if editOps is error {
+                lastValidationFailure = string `Failed to parse JSON edits: ${editOps.message()}`;
+                lastRawResponse = llmResponse;
+                error? parseLogError = writeLLMResponseLog(projectPath, filePath, attempt,
+                    "parse-failure", lastValidationFailure, quietMode);
+                if parseLogError is error && !quietMode {
+                    io:println(string `  ⚠  Log write failed: ${parseLogError.message()}`);
+                }
+                if !quietMode && attempt < maxJavaAttempts {
+                    io:println(string `  ⚠  Failed to parse LLM edits for ${filePath}; retrying (${attempt + 1}/${maxJavaAttempts})`);
+                }
+                attempt += 1;
+                continue;
+            }
+
+            if editOps.length() == 0 {
+                lastValidationFailure = "LLM returned empty edit list";
+                lastRawResponse = llmResponse;
+                if !quietMode && attempt < maxJavaAttempts {
+                    io:println(string `  ⚠  LLM returned no edits for ${filePath}; retrying (${attempt + 1}/${maxJavaAttempts})`);
+                }
+                attempt += 1;
+                continue;
+            }
+
+            // Apply edits to the original file content
+            string|error patchedCode = applyJavaEditOperations(fileContent, editOps);
+            if patchedCode is error {
+                lastValidationFailure = string `Failed to apply edits: ${patchedCode.message()}`;
+                lastRawResponse = llmResponse;
+                if !quietMode && attempt < maxJavaAttempts {
+                    io:println(string `  ⚠  Edit application failed for ${filePath}; retrying (${attempt + 1}/${maxJavaAttempts})`);
+                }
+                attempt += 1;
+                continue;
+            }
+
+            // Log the patched result
+            error? patchedLogError = writeLLMResponseLog(projectPath, filePath, attempt,
+                "patched-result", patchedCode, quietMode);
+            if patchedLogError is error && !quietMode {
+                io:println(string `  ⚠  Log write failed: ${patchedLogError.message()}`);
+            }
+
+            // Validate the patched result
+            error? patchValidationError = validateJavaFixCandidate(fileContent, patchedCode, filePath,
                 errors.length());
-            if javaValidationError is () {
+            if patchValidationError is () {
                 if !quietMode {
-                    io:println(string `  ✓ Generated fix for ${filePath}`);
+                    io:println(string `  ✓ Fixed ${filePath} using LLM patch (${editOps.length()} edit${editOps.length() == 1 ? "" : "s"})`);
                 }
                 return {
                     success: true,
-                    fixedCode: normalizedResponse,
-                    explanation: "Fixed using AI"
+                    fixedCode: patchedCode,
+                    explanation: string `Fixed using AI patch (${editOps.length()} edits)`
                 };
             }
 
-            string|() localizedCandidate = applyLocalizedJavaMerge(fileContent, normalizedResponse, errors);
-            if localizedCandidate is string {
-                error? localizedValidationError = validateJavaFixCandidate(fileContent, <string>localizedCandidate,
-                    filePath, errors.length());
-                if localizedValidationError is () {
-                    if !quietMode {
-                        io:println(string `  ✓ Generated localized Java fix for ${filePath}`);
-                    }
-                    return {
-                        success: true,
-                        fixedCode: <string>localizedCandidate,
-                        explanation: "Fixed using AI (localized merge)"
-                    };
-                }
-                lastValidationError = <error>localizedValidationError;
-            } else {
-                lastValidationError = <error>javaValidationError;
+            lastValidationFailure = (<error>patchValidationError).message();
+            lastRawResponse = llmResponse;
+            string validationSummary = string `attempt=${attempt}\n` +
+                string `editsCount=${editOps.length()}\n` +
+                string `validationError=${lastValidationFailure}\n` +
+                string `balancedBraces=${hasBalancedJavaBraces(patchedCode)}\n`;
+            error? validationLogError = writeLLMResponseLog(projectPath, filePath, attempt,
+                "validation-result", validationSummary, quietMode);
+            if validationLogError is error && !quietMode {
+                io:println(string `  ⚠  Log write failed: ${validationLogError.message()}`);
             }
 
-            lastCandidate = normalizedResponse;
             if !quietMode && attempt < maxJavaAttempts {
-                io:println(string `  ⚠  Rejected unsafe Java rewrite for ${filePath}; retrying (${attempt + 1}/${maxJavaAttempts})`);
+                io:println(string `  ⚠  Patch validation failed for ${filePath}: ${lastValidationFailure}; retrying (${attempt + 1}/${maxJavaAttempts})`);
             }
             attempt += 1;
         }
 
         if !quietMode {
-            io:println(string `  ✗ Rejected unsafe Java rewrite for ${filePath}`);
+            io:println(string `  ✗ All ${maxJavaAttempts} Java fix attempts failed for ${filePath}`);
         }
-        return lastValidationError;
+        return error(string `Java fix failed after ${maxJavaAttempts} attempts for ${filePath}: ${lastValidationFailure}`);
     }
 
     string prompt = createFixPrompt(fileContent, errors, filePath);
@@ -735,6 +798,369 @@ function normalizeCodeResponse(string responseText) returns string {
     }
 
     return string:'join("\n", ...bodyLines).trim();
+}
+
+// --- Java patch-based edit types and functions ---
+
+function normalizeJsonResponse(string responseText) returns string {
+    string trimmed = responseText.trim();
+
+    // Strip markdown code fences if present
+    if trimmed.startsWith("```") {
+        string[] lines = regexp:split(re `\n`, trimmed);
+        int startIndex = 1;
+        int endIndexExclusive = lines.length();
+        if lines[lines.length() - 1].trim() == "```" {
+            endIndexExclusive = lines.length() - 1;
+        }
+        string[] bodyLines = [];
+        foreach int i in startIndex ..< endIndexExclusive {
+            bodyLines.push(lines[i]);
+        }
+        trimmed = string:'join("\n", ...bodyLines).trim();
+    }
+
+    // Find the JSON array boundaries
+    int? arrayStart = trimmed.indexOf("[");
+    int? arrayEnd = trimmed.lastIndexOf("]");
+    if arrayStart is int && arrayEnd is int && arrayEnd > arrayStart {
+        return trimmed.substring(arrayStart, arrayEnd + 1);
+    }
+
+    return trimmed;
+}
+
+function parseJavaEditOperations(string jsonText) returns JavaEditOperation[]|error {
+    json|error parsed = jsonText.fromJsonString();
+    if parsed is error {
+        return error(string `Invalid JSON: ${parsed.message()}`);
+    }
+
+    if parsed !is json[] {
+        return error("Expected JSON array of edit operations");
+    }
+
+    json[] editsArray = <json[]>parsed;
+    if editsArray.length() == 0 {
+        return [];
+    }
+
+    JavaEditOperation[] ops = [];
+    foreach json editJson in editsArray {
+        json|error startLineJson = editJson.startLine;
+        json|error endLineJson = editJson.endLine;
+        json|error replacementJson = editJson.replacement;
+
+        if startLineJson is error || endLineJson is error || replacementJson is error {
+            return error("Edit operation missing required fields (startLine, endLine, replacement)");
+        }
+
+        int|error startLine = int:fromString(startLineJson.toString());
+        int|error endLine = int:fromString(endLineJson.toString());
+
+        if startLine is error || endLine is error {
+            return error("startLine/endLine must be integers");
+        }
+
+        if startLine < 1 || endLine < startLine {
+            return error(string `Invalid line range: ${startLine}-${endLine}`);
+        }
+
+        string[] replacementLines = [];
+        if replacementJson is json[] {
+            foreach json lineJson in <json[]>replacementJson {
+                replacementLines.push(lineJson.toString());
+            }
+        } else {
+            return error("replacement must be a JSON array of strings");
+        }
+
+        ops.push({
+            startLine: startLine,
+            endLine: endLine,
+            replacement: replacementLines
+        });
+    }
+
+    // Sort by startLine descending so we apply from bottom to top (avoids line-number shifts)
+    int i = 0;
+    while i < ops.length() - 1 {
+        int j = i + 1;
+        while j < ops.length() {
+            if ops[j].startLine > ops[i].startLine {
+                JavaEditOperation temp = ops[i];
+                ops[i] = ops[j];
+                ops[j] = temp;
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+
+    // Check for overlapping ranges
+    int k = 0;
+    while k < ops.length() - 1 {
+        if ops[k].startLine <= ops[k + 1].endLine {
+            return error(string `Overlapping edit ranges: ${ops[k + 1].startLine}-${ops[k + 1].endLine} and ${ops[k].startLine}-${ops[k].endLine}`);
+        }
+        k += 1;
+    }
+
+    return ops;
+}
+
+function applyJavaEditOperations(string originalCode, JavaEditOperation[] ops) returns string|error {
+    string[] lines = regexp:split(re `\n`, originalCode);
+    int totalLines = lines.length();
+
+    // ops are sorted descending by startLine, so apply from bottom to top
+    foreach JavaEditOperation op in ops {
+        if op.startLine < 1 || op.endLine > totalLines {
+            return error(string `Edit range ${op.startLine}-${op.endLine} out of bounds (file has ${totalLines} lines)`);
+        }
+
+        // Build new lines array: before + replacement + after
+        string[] newLines = [];
+
+        // Lines before the edit range
+        foreach int idx in 0 ..< (op.startLine - 1) {
+            newLines.push(lines[idx]);
+        }
+
+        // Replacement lines
+        foreach string replacementLine in op.replacement {
+            newLines.push(replacementLine);
+        }
+
+        // Lines after the edit range
+        foreach int idx in op.endLine ..< totalLines {
+            newLines.push(lines[idx]);
+        }
+
+        lines = newLines;
+        totalLines = lines.length();
+    }
+
+    return string:'join("\n", ...lines);
+}
+
+function writeLLMResponseLog(string projectPath, string filePath, int attempt, string phase, string content,
+        boolean quietMode = true) returns error? {
+    if !enableLLMResponseLogs {
+        return;
+    }
+
+    string logDirPath = check file:joinPath(projectPath, llmResponseLogDirName);
+    boolean logDirExists = check file:test(logDirPath, file:EXISTS);
+    if !logDirExists {
+        check file:createDir(logDirPath);
+    }
+
+    string safeFilePath = sanitizeForLogFileName(filePath);
+    string safePhase = sanitizeForLogFileName(phase);
+    string logFileName = string `${safeFilePath}.attempt-${attempt}.${safePhase}.log`;
+    string logPath = check file:joinPath(logDirPath, logFileName);
+
+    io:Error? writeResult = io:fileWriteString(logPath, content, io:OVERWRITE);
+    if writeResult is io:Error {
+        return writeResult;
+    }
+
+    if !quietMode {
+        io:println(string `  ↳ LLM log: ${logPath}`);
+    }
+}
+
+function sanitizeForLogFileName(string input) returns string {
+    string value = regexp:replaceAll(re `[\\/:\s]`, input, "_");
+    return value;
+}
+
+function applyDeterministicJavaCompileFixes(string originalCode, CompilationError[] errors) returns string|() {
+    string[] lines = regexp:split(re `\n`, originalCode);
+    if lines.length() == 0 {
+        return;
+    }
+
+    string[] updatedLines = lines.clone();
+    boolean changed = false;
+
+    foreach CompilationError err in errors {
+        string message = err.message.toLowerAscii();
+        int errorLine = err.line;
+
+        // Pattern 1: "unreported exception ... must be caught or declared to be thrown"
+        // Fix: Add catch(Exception) to the enclosing try block near the error line,
+        //       OR narrow the throws clause on a functional interface.
+        if message.includes("unreported exception") && message.includes("must be caught or declared to be thrown") {
+            // Strategy A: Look for a functional interface with "throws Exception" and narrow it
+            boolean fixedInterface = false;
+            foreach int i in 0 ..< updatedLines.length() {
+                string trimmed = updatedLines[i].trim();
+                if trimmed == "Object call() throws Exception;" {
+                    string ws = getLeadingWhitespace(updatedLines[i]);
+                    updatedLines[i] = string `${ws}Object call() throws Exception;`;
+                    // This won't help - we need to add catch (Exception) to withErrorHandling
+                    fixedInterface = false;
+                    break;
+                }
+            }
+
+            if !fixedInterface {
+                // Strategy B: Find the catch block near the error line and add catch(Exception)
+                boolean addedCatch = false;
+                int searchStart = errorLine - 1;
+                if searchStart < 0 {
+                    searchStart = 0;
+                }
+                int searchEnd = errorLine + 10;
+                if searchEnd > updatedLines.length() {
+                    searchEnd = updatedLines.length();
+                }
+                foreach int i in searchStart ..< searchEnd {
+                    string trimmed = updatedLines[i].trim();
+                    // Look for a catch block that ends with just }
+                    // We want to add a new catch(Exception) after the existing catch block
+                    if trimmed.startsWith("} catch (") && !trimmed.includes("Exception e") {
+                        // Find the closing brace of this catch block
+                        int braceCount = 0;
+                        boolean foundOpenBrace = false;
+                        int insertAfter = i;
+                        foreach int j in i ..< searchEnd {
+                            string jLine = updatedLines[j];
+                            byte[] jBytes = jLine.toBytes();
+                            foreach byte b in jBytes {
+                                if b == 123 { // {
+                                    braceCount += 1;
+                                    foundOpenBrace = true;
+                                }
+                                if b == 125 { // }
+                                    braceCount -= 1;
+                                }
+                            }
+                            if foundOpenBrace && braceCount == 0 {
+                                insertAfter = j;
+                                break;
+                            }
+                        }
+
+                        // We need to insert after the last catch's closing }
+                        // The line at insertAfter should be "        }"
+                        string insertAfterTrimmed = updatedLines[insertAfter].trim();
+                        if insertAfterTrimmed == "}" {
+                            string insertWs = getLeadingWhitespace(updatedLines[insertAfter]);
+                            // Replace the } with } catch (Exception e) { ... }
+                            updatedLines[insertAfter] = string `${insertWs}} catch (Exception e) {`;
+                            // Insert handler and closing brace after
+                            string[] newLines = [];
+                            foreach int n in 0 ... insertAfter {
+                                newLines.push(updatedLines[n]);
+                            }
+                            newLines.push(string `${insertWs}    return createError("unexpected error: " + e.getMessage(), e);`);
+                            newLines.push(string `${insertWs}}`);
+                            foreach int n in (insertAfter + 1) ..< updatedLines.length() {
+                                newLines.push(updatedLines[n]);
+                            }
+                            updatedLines = newLines;
+                            addedCatch = true;
+                            changed = true;
+                        }
+                        break;
+                    }
+                }
+
+                // Strategy C: If no catch block found, look for method with "throws" near error
+                if !addedCatch {
+                    // Find the try block that contains the error line and add catch(Exception)
+                    int tryLine = -1;
+                    foreach int i in 0 ..< errorLine {
+                        int reverseIdx = errorLine - 1 - i;
+                        if reverseIdx < 0 {
+                            break;
+                        }
+                        string trimmed = updatedLines[reverseIdx].trim();
+                        if trimmed.startsWith("try {") || trimmed == "try {" {
+                            tryLine = reverseIdx;
+                            break;
+                        }
+                    }
+
+                    if tryLine >= 0 {
+                        // Find the last catch block's closing brace
+                        int braceCount = 0;
+                        boolean inTry = false;
+                        int lastCatchClose = -1;
+                        foreach int i in tryLine ..< updatedLines.length() {
+                            string jLine = updatedLines[i];
+                            byte[] jBytes = jLine.toBytes();
+                            foreach byte b in jBytes {
+                                if b == 123 {
+                                    braceCount += 1;
+                                    inTry = true;
+                                }
+                                if b == 125 {
+                                    braceCount -= 1;
+                                }
+                            }
+                            if inTry && braceCount == 0 {
+                                lastCatchClose = i;
+                                break;
+                            }
+                        }
+
+                        if lastCatchClose > 0 {
+                            string ws = getLeadingWhitespace(updatedLines[lastCatchClose]);
+                            string[] newLines = [];
+                            foreach int n in 0 ..< lastCatchClose {
+                                newLines.push(updatedLines[n]);
+                            }
+                            newLines.push(string `${ws}} catch (Exception e) {`);
+                            newLines.push(string `${ws}    return createError("unexpected error: " + e.getMessage(), e);`);
+                            newLines.push(string `${ws}}`);
+                            foreach int n in (lastCatchClose + 1) ..< updatedLines.length() {
+                                newLines.push(updatedLines[n]);
+                            }
+                            updatedLines = newLines;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Pattern 2: "cannot find symbol" with a known symbol hint
+        // (placeholder for future patterns)
+    }
+
+    if !changed {
+        return;
+    }
+
+    string result = string:'join("\n", ...updatedLines);
+    if !hasBalancedJavaBraces(result) {
+        return;
+    }
+
+    return result;
+}
+
+function getLeadingWhitespace(string line) returns string {
+    byte[] bytes = line.toBytes();
+    int idx = 0;
+    while idx < bytes.length() {
+        byte b = bytes[idx];
+        if b == 32 || b == 9 {
+            idx += 1;
+            continue;
+        }
+        break;
+    }
+
+    if idx == 0 {
+        return "";
+    }
+
+    return line.substring(0, idx);
 }
 
 function validateJavaFixCandidate(string originalCode, string fixedCode, string filePath, int errorCount = 1) returns error? {
@@ -848,9 +1274,6 @@ function applyLocalizedJavaMerge(string originalCode, string candidateCode, Comp
                     mergedLines[index] = candidateLine;
                     changed = true;
                 }
-            } else if index == mergedLines.length() && candidateLine.length() > 0 {
-                mergedLines.push(candidateLine);
-                changed = true;
             }
         }
     }
@@ -860,6 +1283,125 @@ function applyLocalizedJavaMerge(string originalCode, string candidateCode, Comp
     }
 
     return string:'join("\n", ...mergedLines);
+}
+
+function applyStructuralSafeJavaMerge(string originalCode, string candidateCode, CompilationError[] errors,
+        int windowRadius = 4) returns string|() {
+    if candidateCode.trim().length() == 0 {
+        return;
+    }
+
+    string[] originalLines = regexp:split(re `\n`, originalCode);
+    string[] candidateLines = regexp:split(re `\n`, candidateCode);
+    if candidateLines.length() == 0 {
+        return;
+    }
+
+    string[] mergedLines = originalLines.clone();
+    boolean changed = false;
+    int maxLineCount = mergedLines.length();
+    if candidateLines.length() < maxLineCount {
+        maxLineCount = candidateLines.length();
+    }
+
+    foreach CompilationError err in errors {
+        int errorLine = err.line;
+        if errorLine <= 0 {
+            continue;
+        }
+
+        int startLine = errorLine - windowRadius;
+        if startLine < 1 {
+            startLine = 1;
+        }
+
+        int endLine = errorLine + windowRadius;
+        if endLine > maxLineCount {
+            endLine = maxLineCount;
+        }
+
+        foreach int lineNum in startLine ... endLine {
+            int index = lineNum - 1;
+            if index >= mergedLines.length() || index >= candidateLines.length() {
+                continue;
+            }
+
+            string originalLine = mergedLines[index];
+            string candidateLine = candidateLines[index];
+            if originalLine == candidateLine {
+                continue;
+            }
+
+            if !isStructuralSafeReplacement(originalLine, candidateLine) {
+                continue;
+            }
+
+            mergedLines[index] = candidateLine;
+            changed = true;
+        }
+    }
+
+    if !changed {
+        return;
+    }
+
+    string mergedCode = string:'join("\n", ...mergedLines);
+    if !hasBalancedJavaBraces(mergedCode) {
+        return;
+    }
+
+    return mergedCode;
+}
+
+function isStructuralSafeReplacement(string originalLine, string candidateLine) returns boolean {
+    string originalTrimmed = originalLine.trim();
+    string candidateTrimmed = candidateLine.trim();
+
+    if originalTrimmed.startsWith("package ") || candidateTrimmed.startsWith("package ") {
+        return false;
+    }
+
+    if originalTrimmed.startsWith("import ") || candidateTrimmed.startsWith("import ") {
+        return false;
+    }
+
+    if originalLine.includes(" class ") || candidateLine.includes(" class ") {
+        return false;
+    }
+
+    if originalLine.includes(" interface ") || candidateLine.includes(" interface ") {
+        return false;
+    }
+
+    if originalLine.includes(" enum ") || candidateLine.includes(" enum ") {
+        return false;
+    }
+
+    if originalLine.includes("{") || originalLine.includes("}") || candidateLine.includes("{") ||
+        candidateLine.includes("}") {
+        return false;
+    }
+
+    int originalBracketDelta = getCharDelta(originalLine, 40, 41);
+    int candidateBracketDelta = getCharDelta(candidateLine, 40, 41);
+    if originalBracketDelta != candidateBracketDelta {
+        return false;
+    }
+
+    return true;
+}
+
+function getCharDelta(string line, byte openByte, byte closeByte) returns int {
+    int balance = 0;
+    byte[] bytes = line.toBytes();
+    foreach byte b in bytes {
+        if b == openByte {
+            balance += 1;
+        } else if b == closeByte {
+            balance -= 1;
+        }
+    }
+    return balance;
 }
 
 function hasBalancedJavaBraces(string sourceCode) returns boolean {

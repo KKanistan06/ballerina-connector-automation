@@ -20,88 +20,6 @@ Generate a COMPLETE connector implementation package in JSON form with:
 The output MUST be deterministic, compilable, and internally consistent.
 </objective>
 
-<input_schema>
-Three inputs are always provided together in each user message, each clearly labelled.
-
-1. nativeLibraryMetadata (JSON)
-   Top-level fields:
-     - sdkInfo.name                  : string   — human-readable SDK name
-     - sdkInfo.rootClientClass       : string   — fully-qualified Java client class
-     - clientInit.patternName        : string   — "builder" | "constructor"
-     - clientInit.builderClass       : string   — fully-qualified builder class (if builder pattern)
-     - clientInit.connectionFields[] : array    — fields available on the builder/constructor
-         .name          : string   — field name (camelCase)
-         .typeName      : string   — simple Java type name
-         .fullType      : string   — fully-qualified Java type
-         .isRequired    : boolean
-         .enumReference : string | null  — FQN if this field is an enum
-     - clientInit.syntheticTypeMetadata[] : array — Ballerina-mapped shapes for connection field types
-     - rootClient.methods[]          : array    — all callable native methods
-         .name              : string
-         .parameters[]      : array
-             .name           : string
-             .typeName       : string  — Java type or FQN
-             .requestFields[]: array   — sub-fields when param is a request object
-                 .name          : string
-                 .typeName      : string
-                 .fullType      : string
-                 .isRequired    : boolean
-                 .enumReference : string | null
-         .returnType        : string   — fully-qualified Java return type
-         .returnFields[]    : array    — fields on the Java response object
-         .exceptions[]      : string[] — checked/unchecked exception FQNs
-
-2. irJson (JSON)
-   Top-level fields:
-     - sdkName        : string
-     - clientName     : string
-     - connectionFields[] : array — canonical connection config fields
-         .name  : string
-         .kind  : "Required" | "Included"
-         .type  : string   — Ballerina type name
-     - functions[]    : array — canonical remote method descriptors
-         .name        : string
-         .kind        : "Remote"
-         .parameters[]: array
-             .name          : string
-             .kind          : "Required" | "Included"
-             .type          : string   — Ballerina type name
-             .referenceType : string | null  — type name if this param is a record
-         .return.type          : string  — Ballerina return type; "()" means void/error?
-         .return.referenceType : string | null
-     - structures[]   : array — all named Ballerina record types
-         .name    : string
-         .kind    : "STRUCTURE"
-         .fields[]: array
-             .name : string
-             .kind : "Required" | "Included"
-             .type : string  — Ballerina type (e.g. "string", "int", "boolean",
-                               "map<string>", "SomeRecord[]", "EnumName")
-     - enums[]        : array — all named Ballerina enum types
-         .name       : string
-         .kind       : "ENUM"
-         .nativeType : string   — underlying Ballerina primitive (always "string")
-         .values[]   : array
-             .member : string   — Ballerina enum member token (DO NOT rename)
-             .value  : string   — wire value
-
-3. apiSpecBal (string)
-   Raw Ballerina source of the generated API spec. This is the SOURCE OF TRUTH for:
-     - All remote method names, parameter names, parameter types, and return types
-     - The client class name and init signature
-     - Spread-config record types (*XConfig) — treat all their fields as ConfigField bindings
-     - All enum and record type definitions
-
-   Rules:
-     - All generated clientBal method signatures MUST exactly match those in apiSpecBal.
-     - Do NOT infer method signatures from metadata or IR when apiSpecBal is present.
-     - A 'key param in Ballerina spec (quoted keyword) must be passed to Java as "key".
-     - Spread-config params (*XConfig) carry optional overrides; map each field as ConfigField.
-     - When return type is error?, Java response fields are discarded; return null on success.
-     - When return type is T|error, map Java response fields to typed Ballerina values
-       compatible with T (typed records/typed arrays), not an untyped top-level map.
-</input_schema>
-
 <output_schema>
 Return exactly ONE valid JSON object matching this schema and nothing else.
 No markdown, no explanation text, no code fences.
@@ -170,11 +88,13 @@ C4a. Vendor-neutral generation
 C5. Complete coverage
     - Every remote method in API spec client must appear once in methodMappings.
     - Every mapping must include parameterBindings covering all spec parameters.
+    - For every mapped operation, request and response record fields from API spec/IR must be fully mapped in nativeAdaptorJava.
+    - Do not omit any declared record field when that record is part of the operation contract.
 
 C6. Correctness-first generation
     - Prefer explicit field-level binding over ambiguous positional mapping.
     - If a request object must be constructed, map each known request field from spec args/config.
-    - For unknown/non-bindable fields, keep deterministic TODO markers in code and list them in validation notes.
+    - Do not emit partial field mappings; if full mapping is impossible from inputs, report it explicitly in validation and fail allSpecMethodsMapped.
 
 C7. Deterministic style
     - No random placeholders, no variable naming instability.
@@ -199,11 +119,13 @@ R2. Parameter binding strategy
     - Request object params: map spec request fields to Java request builder fields.
     - Spread config (*XConfig): treat as optional override source for Java request/build options.
     - File/path params: map to Java streaming/content body conversions when relevant.
+    - Request mapping must cover all declared request record fields used by the operation.
 
 R3. Return mapping strategy
     - If spec return includes |error, client body should return adapted Java result or error.
     - If spec return is error?, client body returns nil on success and error on failure.
     - Preserve response model names from API spec/IR.
+    - Response mapping must populate all declared response record fields available from SDK/native response.
 
 R4. Enum and type correctness
     - Keep enum member tokens exactly as provided by API spec/IR (no renaming).
@@ -296,72 +218,72 @@ G5. Ballerina interop conventions
     The nativeAdaptorJava MUST follow these Ballerina runtime interop conventions exactly.
     Deviating from them causes scheduler deadlocks, native data leaks, or load failures.
 
-    G5a. Client storage — BObject native data
-        - The native SDK client MUST be stored inside the Ballerina BObject using
-          bClient.addNativeData(KEY, nativeClient) in init, and retrieved via
-          (NativeClientType) bClient.getNativeData(KEY) at the start of each operation.
-        - Do NOT use instance fields or pass an adaptor object between methods.
-        - Define a single constant for the key:
-              public static final String NATIVE_CLIENT = "nativeClient";
+G5a. Client storage — BObject native data
+    - The native SDK client MUST be stored inside the Ballerina BObject using
+      bClient.addNativeData(KEY, nativeClient) in init, and retrieved via
+      (NativeClientType) bClient.getNativeData(KEY) at the start of each operation.
+    - Do NOT use instance fields or pass an adaptor object between methods.
+    - Define a single constant for the key:
+        public static final String NATIVE_CLIENT = "nativeClient";
 
-    G5b. init signature and contract
-        - init always takes exactly (BObject bClient, BMap<BString, Object> bConnectionConfig).
-        - Read all config fields from the BMap inside init using a getStringField() helper.
-        - On success: call bClient.addNativeData(NATIVE_CLIENT, nativeClient) and return null.
-        - On failure: return a Ballerina error — never throw out of init.
+G5b. init signature and contract
+    - init always takes exactly (BObject bClient, BMap<BString, Object> bConnectionConfig).
+    - Read all config fields from the BMap inside init using a getStringField() helper.
+    - On success: call bClient.addNativeData(NATIVE_CLIENT, nativeClient) and return null.
+    - On failure: return a Ballerina error — never throw out of init.
 
-    G5c. Operation method signature prefix
-        - Every operation method MUST declare Environment env and BObject bClient
-          as its first two parameters, in that order:
-              public static Object methodName(Environment env, BObject bClient, ...)
-        - Retrieve the native client from bClient at the start of the method body,
-          before entering yieldAndRun.
+G5c. Operation method signature prefix
+    - Every operation method MUST declare Environment env and BObject bClient
+      as its first two parameters, in that order:
+          public static Object methodName(Environment env, BObject bClient, ...)
+    - Retrieve the native client from bClient at the start of the method body,
+      before entering yieldAndRun.
 
-    G5d. Offload blocking work using "env.yieldAndRun(...)"
-        - Blocking network or IO calls must NOT run on the Ballerina strand.
-        - Use "env.yieldAndRun(() -> { ... })" as the preferred and required offload pattern
-          for generated adaptor methods that invoke blocking SDK calls.
-        - "env.markAsync()" + "Runtime.runAsync()" is disallowed in generated output — prefer
-          "env.yieldAndRun" for concise, scheduler-safe offload semantics.
-        - The lambda passed to "env.yieldAndRun" should perform the SDK call and return the
-          mapped Ballerina result (or a BError). The outer Java method should return that
-          value directly to the runtime.
+G5d. Offload blocking work using "env.yieldAndRun(...)"
+    - Blocking network or IO calls must NOT run on the Ballerina strand.
+    - Use "env.yieldAndRun(() -> { ... })" as the preferred and required offload pattern
+      for generated adaptor methods that invoke blocking SDK calls.
+    - "env.markAsync()" + "Runtime.runAsync()" is disallowed in generated output — prefer
+      "env.yieldAndRun" for concise, scheduler-safe offload semantics.
+    - The lambda passed to "env.yieldAndRun" should perform the SDK call and return the
+      mapped Ballerina result (or a BError). The outer Java method should return that
+      value directly to the runtime.
 
-    G5e. close() method
-        - If the metadata specifies a closeMethod, generate:
-              public static Object close(BObject bClient) { ... }
-          which retrieves the native client and calls its close/release method.
-        - Return null on success, a Ballerina error on failure.
+G5e. close() method
+    - If the metadata specifies a closeMethod, generate:
+          public static Object close(BObject bClient) { ... }
+      which retrieves the native client and calls its close/release method.
+    - Return null on success, a Ballerina error on failure.
 
-    G5f. Error construction with cause
-        - Always use a createError(String msg, Throwable cause) helper that attaches
-          the original exception so the stack trace is preserved in the Ballerina error.
-        - Never discard the cause or call ErrorCreator directly with only a message string.
-        - If multiple exceptions can be handled with the same logic, use the multi-catch pattern:
-              try {
+G5f. Error construction with cause
+    - Always use a createError(String msg, Throwable cause) helper that attaches
+      the original exception so the stack trace is preserved in the Ballerina error.
+    - Never discard the cause or call ErrorCreator directly with only a message string.
+    - If multiple exceptions can be handled with the same logic, use the multi-catch pattern:
+          try {
                   ...
-              } catch (FirstExceptionType | SecondExceptionType e) {
-                  return createError("operation failed: " + e.getMessage(), e);
-              }
-          rather than separate catch blocks with identical bodies.
-        - Do not emit per-method catch (Exception e) blocks in generated operation bodies.
-          Prefer either specific multi-catch clauses for known conversion/SDK failures or
-          a single centralized helper that performs fallback exception wrapping.
+          } catch (FirstExceptionType | SecondExceptionType e) {
+              return createError("operation failed: " + e.getMessage(), e);
+          }
+      rather than separate catch blocks with identical bodies.
+    - Do not emit per-method catch (Exception e) blocks in generated operation bodies.
+      Prefer either specific multi-catch clauses for known conversion/SDK failures or
+      a single centralized helper that performs fallback exception wrapping.
 
-    G5g. clientBal external function declarations
-        - The init external function passes the Ballerina client object (self) as first param:
-              function initNativeAdaptor(Client bClient, ConnectionConfig config)
-                  returns error? = @java:Method { ... } external;
-        - Operation external functions also pass self as first param; Environment is NOT
-          declared on the Ballerina side — the runtime injects it automatically when the
-          Java method declares it as the first Java parameter:
-              function nativePutObject(Client bClient, string bucket, ...)
-                  returns PutObjectResponse|error = @java:Method { ... } external;
-        - Signature parity is mandatory between each @java:Method declaration and the bound Java method.
-            If external signature is (Client, p1, p2, ..., pn), Java signature must be
-            (Environment env, BObject bClient, j1, j2, ..., jn) where each ji corresponds to pi
-          in the same order with compatible runtime type mapping.
-          Do NOT collapse multiple declared params into one BMap unless clientBal also declares one param.
+G5g. clientBal external function declarations
+    - The init external function passes the Ballerina client object (self) as first param:
+          function initNativeAdaptor(Client bClient, ConnectionConfig config)
+              returns error? = @java:Method { ... } external;
+    - Operation external functions also pass self as first param; Environment is NOT
+      declared on the Ballerina side — the runtime injects it automatically when the
+      Java method declares it as the first Java parameter:
+          function nativePutObject(Client bClient, string bucket, ...)
+              returns PutObjectResponse|error = @java:Method { ... } external;
+    - Signature parity is mandatory between each @java:Method declaration and the bound Java method.
+        If external signature is (Client, p1, p2, ..., pn), Java signature must be
+        (Environment env, BObject bClient, j1, j2, ..., jn) where each ji corresponds to pi
+      in the same order with compatible runtime type mapping.
+      Do NOT collapse multiple declared params into one BMap unless clientBal also declares one param.
 </codegen_rules>
 
 <example>
@@ -484,6 +406,8 @@ Before returning output, perform these checks and reflect them in validation:
          runtime io.ballerina.runtime.api.types.Type and SDK ...model.Type must not be imported together.
     V20. clientBal must not define @java:Method external declarations inside the Client class body;
          these declarations must be module-level functions outside the class.
+    V21. For each mapped operation, request and response record field coverage is complete;
+         no declared contract field is silently dropped in nativeAdaptorJava mappings.
 
 If any mandatory check fails, still return schema-compliant JSON with detailed validation errors.
 </validation_checklist_mandatory>

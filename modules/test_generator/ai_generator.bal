@@ -4,61 +4,18 @@ import ballerina/lang.regexp;
 
 import wso2/connector_automation.code_fixer;
 
-const int MAX_OPERATIONS = 40;
-
-function completeMockServer(string mockServerPath, string typesPath, boolean quietMode = false) returns error? {
-    // Read the generated mock server template
-    string mockServerContent = check io:fileReadString(mockServerPath);
-    string typesContent = check io:fileReadString(typesPath);
-
-    int templateFunctionCount = countResourceFunctionDefinitions(mockServerContent);
-
-    // generate completed mock server using LLM
-    string prompt = createMockServerPrompt(mockServerContent, typesContent);
-
-    string completedMockServer = check callAI(prompt);
-
-    string candidateMockServer = sanitizeGeneratedCode(completedMockServer);
-    boolean candidateValid = isMockServerComplete(candidateMockServer, templateFunctionCount);
-
-    if !candidateValid {
-        string retryPrompt = string `${prompt}
-
-CRITICAL VALIDATION REQUIREMENTS:
-- Preserve ALL existing resource functions from the template.
-- Do NOT remove any function.
-- Return a complete source file with balanced braces.
-- Keep service and listener declarations unchanged.`;
-
-        string retryResult = check callAI(retryPrompt);
-        string retryCandidate = sanitizeGeneratedCode(retryResult);
-        if isMockServerComplete(retryCandidate, templateFunctionCount) {
-            candidateMockServer = retryCandidate;
-            candidateValid = true;
-        }
-    }
-
-    if !candidateValid {
-        if !quietMode {
-            io:println("⚠  AI mock completion returned incomplete output; preserving generated template");
-        }
-        candidateMockServer = mockServerContent;
-    }
-
-    check io:fileWriteString(mockServerPath, candidateMockServer);
-
-    if !quietMode {
-        io:println("✓ Mock server template completed successfully");
-    }
-    return;
-}
+const int MAX_OPERATIONS = 60;
 
 function generateTestFile(string connectorPath, string[]? operationIds = (), boolean quietMode = false) returns error? {
-    // Simplified analysis - only get package name and mock server content
+    // Analyze connector artifacts for live-test generation
     ConnectorAnalysis analysis = check analyzeConnectorForTests(connectorPath, operationIds);
 
     // Generate test content using AI
-    string testContent = check generateTestsWithAI(analysis);
+    string testContent = sanitizeGeneratedCode(check generateTestsWithAI(analysis));
+    testContent = normalizeGeneratedLiveTests(testContent);
+
+    // Strip unsafe patterns: enum-based attributeNames args and computed enum map keys
+    testContent = stripUnsafeEnumPatterns(testContent);
 
     // Write test file
     string testFilePath = connectorPath + "/ballerina/tests/test.bal";
@@ -69,6 +26,164 @@ function generateTestFile(string connectorPath, string[]? operationIds = (), boo
         io:println(string `  Output: ${testFilePath}`);
     }
     return;
+}
+
+// ---------------------------------------------------------------------------
+// Strip patterns that cause native adapter failures at runtime:
+// 1. attributeNames = [...] optional parameters with enum members
+// 2. [ENUM_MEMBER]: "value" computed map key syntax
+// ---------------------------------------------------------------------------
+
+function stripUnsafeEnumPatterns(string content) returns string {
+    string[] lines = regexp:split(re `\n`, content);
+    string[] out = [];
+    int i = 0;
+    while i < lines.length() {
+        string line = lines[i];
+        string trimmed = line.trim();
+
+        // Remove standalone attributeNames = [...] lines (single or multi-line)
+        if trimmed.startsWith("attributeNames = [") || trimmed.startsWith("attributeNames=[") {
+            if trimmed.includes("]") {
+                i += 1;
+                continue;
+            }
+            i += 1;
+            while i < lines.length() {
+                if lines[i].includes("]") {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        // Remove inline attributeNames = [...] from method call lines
+        if line.includes("attributeNames = [") && line.includes("]") {
+            int? atStart = line.indexOf("attributeNames = [");
+            if atStart is int {
+                int? atEnd = line.indexOf("]", atStart);
+                if atEnd is int {
+                    string before = line.substring(0, atStart).trim();
+                    string after = line.substring(atEnd + 1);
+                    if before.endsWith(",") {
+                        before = before.substring(0, before.length() - 1);
+                    }
+                    string afterTrimmed = after.trim();
+                    if afterTrimmed.startsWith(",") {
+                        int? commaIdx = after.indexOf(",");
+                        if commaIdx is int {
+                            after = after.substring(commaIdx + 1);
+                        }
+                    }
+                    string merged = before + after;
+                    if merged.trim().length() > 0 {
+                        out.push(merged);
+                    }
+                    i += 1;
+                    continue;
+                }
+            }
+        }
+
+        // Remove computed enum map key lines: [ENUM_MEMBER]: "value"
+        if trimmed.startsWith("[") && trimmed.includes("]:") {
+            int? closeBracket = trimmed.indexOf("]:");
+            if closeBracket is int {
+                string insideBrackets = trimmed.substring(1, closeBracket).trim();
+                boolean isIdentifier = insideBrackets.length() > 0 && !insideBrackets.startsWith("\"");
+                if isIdentifier {
+                    i += 1;
+                    continue;
+                }
+            }
+        }
+
+        out.push(line);
+        i += 1;
+    }
+    return string:'join("\n", ...out);
+}
+
+function normalizeGeneratedLiveTests(string content) returns string {
+    string[] lines = regexp:split(re `\n`, content);
+    string[] out = [];
+
+    int i = 0;
+    while i < lines.length() {
+        string line = lines[i];
+        string trimmed = line.trim();
+
+        // 1) Convert missing-env getClient() error to skip sentinel.
+        if trimmed.startsWith("return error(\"Required environment variables") {
+            string ws = getLeadingWhitespaceFromLine(line);
+            out.push(string `${ws}return error("LIVE_TEST_DISABLED: required environment variables are not set");`);
+            i += 1;
+            continue;
+        }
+
+        // 2) Replace silent pass block:
+        // if clientResult is error {
+        //     return;
+        // }
+        if trimmed == "if clientResult is error {" && i + 2 < lines.length() {
+            string nextTrimmed = lines[i + 1].trim();
+            string nextNextTrimmed = lines[i + 2].trim();
+            if nextTrimmed == "return;" && nextNextTrimmed == "}" {
+                string ws = getLeadingWhitespaceFromLine(line);
+                out.push(string `${ws}if clientResult is error {`);
+                out.push(string `${ws}    if clientResult.message().startsWith("LIVE_TEST_DISABLED:") {`);
+                out.push(string `${ws}        return;`);
+                out.push(string `${ws}    }`);
+                out.push(string `${ws}    return clientResult;`);
+                out.push(string `${ws}}`);
+                i += 3;
+                continue;
+            }
+        }
+
+        // 3) Rewrite tautological assertion pattern:
+        // test:assertTrue((var is string) && (<string>var).length() > 0, ...)
+        if trimmed.startsWith("test:assertTrue((") && trimmed.includes(" is string) && (<string>") &&
+            trimmed.includes(").length() > 0,") {
+            int? prefixIndex = line.indexOf("test:assertTrue((");
+            if prefixIndex is int {
+                int varStart = <int>prefixIndex + 17;
+                int? varEnd = line.indexOf(" is string) && (<string>", varStart);
+                if varEnd is int {
+                    string variable = line.substring(varStart, <int>varEnd);
+                    string assertPrefix = line.substring(0, <int>prefixIndex);
+                    int? msgStart = line.indexOf(",", <int>varEnd);
+                    if msgStart is int {
+                        string remainder = line.substring(<int>msgStart);
+                        out.push(string `${assertPrefix}test:assertTrue((${variable} ?: "").length() > 0${remainder}`);
+                        i += 1;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        out.push(line);
+        i += 1;
+    }
+
+    return string:'join("\n", ...out);
+}
+
+function getLeadingWhitespaceFromLine(string line) returns string {
+    int idx = 0;
+    byte[] bytes = line.toBytes();
+    while idx < bytes.length() {
+        byte b = bytes[idx];
+        if b == 32 || b == 9 {
+            idx += 1;
+            continue;
+        }
+        break;
+    }
+    return idx > 0 ? line.substring(0, idx) : "";
 }
 
 function generateTestsWithAI(ConnectorAnalysis analysis) returns string|error {
@@ -233,43 +348,38 @@ function sanitizeGeneratedCode(string content) returns string {
     return string:'join("\n", ...lines.slice(startIndex, endExclusive)).trim();
 }
 
-function isMockServerComplete(string content, int expectedFunctionCount) returns boolean {
-    if content.trim().length() == 0 {
-        return false;
+// ---------------------------------------------------------------------------
+// Spec analysis helpers (moved from removed mock_service_generator.bal)
+// ---------------------------------------------------------------------------
+
+function countOperationsInSpec(string specPath) returns int|error {
+    string specContent = check io:fileReadString(specPath);
+    if specPath.toLowerAscii().endsWith(".bal") || specContent.includes("public isolated client class Client {") {
+        return extractRemoteOperationIdsFromSpec(specContent).length();
     }
-    if !hasBalancedBraces(content) {
-        return false;
-    }
-    int actualFunctionCount = countResourceFunctionDefinitions(content);
-    return actualFunctionCount >= expectedFunctionCount;
+    regexp:RegExp operationIdPattern = re `"operationId"\s*:\s*"[^"]*"`;
+    regexp:Span[] matches = operationIdPattern.findAll(specContent);
+    return matches.length();
 }
 
-function countResourceFunctionDefinitions(string content) returns int {
-    string[] lines = regexp:split(re `\n`, content);
-    int count = 0;
+function extractRemoteOperationIdsFromSpec(string specContent) returns string[] {
+    string[] operationIds = [];
+    string[] lines = regexp:split(re `\n`, specContent);
     foreach string line in lines {
         string trimmed = line.trim();
-        if trimmed.startsWith("resource function ") {
-            count += 1;
+        if !trimmed.startsWith("remote isolated function ") {
+            continue;
         }
-    }
-    return count;
-}
-
-function hasBalancedBraces(string content) returns boolean {
-    int depth = 0;
-    byte[] bytes = content.toBytes();
-    foreach byte b in bytes {
-        if b == 123 {
-            depth += 1;
-        } else if b == 125 {
-            depth -= 1;
-            if depth < 0 {
-                return false;
+        int startIdx = 25;
+        int? paren = trimmed.indexOf("(");
+        if paren is int && <int>paren > startIdx {
+            string operationId = trimmed.substring(startIdx, <int>paren).trim();
+            if operationId.length() > 0 {
+                operationIds.push(operationId);
             }
         }
     }
-    return depth == 0;
+    return operationIds;
 }
 
 function selectOperationsUsingAI(string specPath, boolean quietMode = false) returns string|error {

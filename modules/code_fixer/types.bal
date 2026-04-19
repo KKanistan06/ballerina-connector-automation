@@ -37,3 +37,9 @@ public type FixResponse record {|
 |};
 
 public type BallerinaFixerError error;
+
+type JavaEditOperation record {|
+    int startLine;
+    int endLine;
+    string[] replacement;
+|};

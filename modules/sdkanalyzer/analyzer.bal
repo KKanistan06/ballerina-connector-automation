@@ -19,8 +19,6 @@ import ballerina/io;
 import ballerina/regex;
 import ballerina/time;
 
-const int AUTO_MAX_ADDITIONAL_CLIENTS = 4;
-
 # Main function that analyzes a Java SDK JAR file using JavaParser approach.
 #
 # + jarPath - Path to the JAR file (local filesystem path)
@@ -98,11 +96,7 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     printAnalyzerStep(2, "Identifying root client", config.quietMode);
 
     // Increase candidate shortlist to give the LLM more options for side-by-side comparison
-        [ClassInfo, LLMClientScore][]|AnalyzerError clientResult = identifyClientClassWithLLM(
-            filteredClasses,
-            20,
-            config.clientRoleHint
-        );
+        [ClassInfo, LLMClientScore][]|AnalyzerError clientResult = identifyClientClassWithLLM(filteredClasses, 20);
     if clientResult is AnalyzerError {
         return clientResult;
     }
@@ -110,22 +104,10 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     // Get top 5 candidates with scores
     [ClassInfo, LLMClientScore][] topCandidates = clientResult;
 
-    ClassInfo rootClient = selectRootClientCandidate(topCandidates, config.clientRoleHint, config.clientClassHint);
-    SelectedClientInfo[] selectedClients = selectDetectedClientCandidates(topCandidates, rootClient);
+    ClassInfo rootClient = selectRootClientCandidate(topCandidates);
 
     if !config.quietMode {
         io:println(string `  → Root client: ${rootClient.simpleName}`);
-        if selectedClients.length() > 1 {
-            string[] extras = [];
-            foreach SelectedClientInfo selectedClient in selectedClients {
-                if !selectedClient.isRoot {
-                    extras.push(string `${selectedClient.simpleName} (${selectedClient.role})`);
-                }
-            }
-            if extras.length() > 0 {
-                io:println(string `  → Additional clients: ${string:'join(", ", ...extras)}`);
-            }
-        }
     }
 
     // Step 6: Detect client initialization pattern (LLM-only)
@@ -172,10 +154,6 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
             dependencyJarPaths,
             config
     );
-    if selectedClients.length() > 0 {
-        structuredMetadata.selectedClients = selectedClients;
-    }
-
     // Step 10: Create final metadata object
     time:Utc endTime = time:utcNow();
     decimal duration = time:utcDiffSeconds(endTime, startTime);
@@ -209,33 +187,7 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     };
 }
 
-function selectRootClientCandidate([ClassInfo, LLMClientScore][] topCandidates, string? roleHint = (),
-        string? classHint = ()) returns ClassInfo {
-    if classHint is string {
-        string normalizedHint = classHint.trim();
-        if normalizedHint.length() > 0 {
-            string normalizedLower = normalizedHint.toLowerAscii();
-            foreach var entry in topCandidates {
-                ClassInfo c = <ClassInfo>entry[0];
-                if c.className == normalizedHint || c.simpleName == normalizedHint ||
-                    c.className.toLowerAscii() == normalizedLower || c.simpleName.toLowerAscii() == normalizedLower {
-                    return c;
-                }
-            }
-        }
-    }
-
-    if roleHint is string {
-        string normalizedRole = roleHint.trim().toLowerAscii();
-        if normalizedRole.length() > 0 {
-            foreach var entry in topCandidates {
-                ClassInfo c = <ClassInfo>entry[0];
-                if inferClientRole(c.simpleName) == normalizedRole {
-                    return c;
-                }
-            }
-        }
-    }
+function selectRootClientCandidate([ClassInfo, LLMClientScore][] topCandidates) returns ClassInfo {
 
     int syncIndex = -1;
     foreach int i in 0 ..< topCandidates.length() {
@@ -291,184 +243,6 @@ function selectRootClientCandidate([ClassInfo, LLMClientScore][] topCandidates, 
         return bestCls;
     }
     return topCandidates[0][0];
-}
-
-function selectDetectedClientCandidates([ClassInfo, LLMClientScore][] rankedCandidates,
-        ClassInfo rootClient) returns SelectedClientInfo[] {
-    SelectedClientInfo[] selected = [];
-    map<boolean> added = {};
-    decimal rootScore = 0.0;
-    string rootClassName = rootClient.className;
-
-    map<SelectedClientInfo> bestByRole = {};
-    foreach var entry in rankedCandidates {
-        ClassInfo cls = <ClassInfo>entry[0];
-        LLMClientScore score = <LLMClientScore>entry[1];
-
-        SelectedClientInfo info = {
-            className: cls.className,
-            packageName: cls.packageName,
-            simpleName: cls.simpleName,
-            role: inferClientRole(cls.simpleName),
-            score: score.totalScore,
-            isRoot: cls.className == rootClassName,
-            reason: score.breakdown
-        };
-
-        if info.isRoot {
-            selected.push(info);
-            added[cls.className] = true;
-            rootScore = score.totalScore;
-            continue;
-        }
-
-        if !shouldSelectAdditionalClient(cls, score, info.role, rootScore, rootClient.packageName) {
-            continue;
-        }
-
-        if !bestByRole.hasKey(info.role) {
-            bestByRole[info.role] = info;
-        }
-    }
-
-    if selected.length() == 0 {
-        SelectedClientInfo fallback = {
-            className: rootClient.className,
-            packageName: rootClient.packageName,
-            simpleName: rootClient.simpleName,
-            role: inferClientRole(rootClient.simpleName),
-            score: rootScore,
-            isRoot: true,
-            reason: "Root client selected by analyzer"
-        };
-        selected.push(fallback);
-        added[rootClient.className] = true;
-    }
-
-    int maxCount = AUTO_MAX_ADDITIONAL_CLIENTS;
-    string[] preferredRoles = ["admin", "producer", "consumer", "general"];
-    foreach string role in preferredRoles {
-        if selected.length() >= maxCount {
-            break;
-        }
-        if bestByRole.hasKey(role) {
-            SelectedClientInfo? candidate = bestByRole[role];
-            if candidate is SelectedClientInfo && !added.hasKey(candidate.className) {
-                selected.push(candidate);
-                added[candidate.className] = true;
-            }
-        }
-    }
-
-    foreach var entry in rankedCandidates {
-        if selected.length() >= maxCount {
-            break;
-        }
-        ClassInfo cls = <ClassInfo>entry[0];
-        if added.hasKey(cls.className) {
-            continue;
-        }
-        LLMClientScore score = <LLMClientScore>entry[1];
-        SelectedClientInfo info = {
-            className: cls.className,
-            packageName: cls.packageName,
-            simpleName: cls.simpleName,
-            role: inferClientRole(cls.simpleName),
-            score: score.totalScore,
-            isRoot: false,
-            reason: score.breakdown
-        };
-        selected.push(info);
-        added[cls.className] = true;
-    }
-
-    return selected;
-}
-
-function shouldSelectAdditionalClient(ClassInfo cls, LLMClientScore score, string role, decimal rootScore,
-        string rootPackage) returns boolean {
-    string simpleNameLower = cls.simpleName.toLowerAscii();
-    if isHelperClientLikeName(simpleNameLower) {
-        return false;
-    }
-
-    if score.totalScore < 20.0d {
-        return false;
-    }
-
-    if rootScore > 0.0d {
-        decimal ratio = score.totalScore / rootScore;
-        if ratio < 0.35d && score.totalScore < 45.0d {
-            return false;
-        }
-    }
-
-    boolean relatedPackage = isRelatedClientPackage(cls.packageName, rootPackage);
-    boolean explicitClientRole = role != "general";
-    boolean explicitClientName = simpleNameLower.includes("client") || simpleNameLower.includes("service") ||
-        simpleNameLower.includes("admin") || simpleNameLower.includes("producer") ||
-        simpleNameLower.includes("consumer");
-
-    if explicitClientRole {
-        return relatedPackage || explicitClientName;
-    }
-
-    if !relatedPackage && !explicitClientName {
-        return false;
-    }
-
-    return cls.methods.length() >= 8 || score.totalScore >= 50.0d;
-}
-
-function isHelperClientLikeName(string simpleNameLower) returns boolean {
-    string[] helperTokens = ["builder", "config", "option", "request", "response", "result", "record",
-        "metadata", "context", "factory", "provider", "interceptor", "serializer", "deserializer",
-        "authenticator", "readable", "writable", "util", "helper"];
-    foreach string token in helperTokens {
-        if simpleNameLower.includes(token) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function isRelatedClientPackage(string candidatePackage, string rootPackage) returns boolean {
-    if candidatePackage == rootPackage || candidatePackage.startsWith(string `${rootPackage}.`) ||
-        rootPackage.startsWith(string `${candidatePackage}.`) {
-        return true;
-    }
-
-    string candidatePrefix = getPackagePrefix(candidatePackage, 3);
-    string rootPrefix = getPackagePrefix(rootPackage, 3);
-    return candidatePrefix.length() > 0 && candidatePrefix == rootPrefix;
-}
-
-function getPackagePrefix(string packageName, int depth) returns string {
-    string[] parts = regex:split(packageName, "\\.");
-    int maxDepth = parts.length() < depth ? parts.length() : depth;
-    if maxDepth <= 0 {
-        return "";
-    }
-
-    string[] prefix = [];
-    foreach int i in 0 ..< maxDepth {
-        prefix.push(parts[i]);
-    }
-    return string:'join(".", ...prefix);
-}
-
-function inferClientRole(string simpleName) returns string {
-    string nameLower = simpleName.toLowerAscii();
-    if nameLower.includes("admin") || nameLower.includes("management") {
-        return "admin";
-    }
-    if nameLower.includes("producer") || nameLower.includes("publisher") || nameLower.includes("writer") {
-        return "producer";
-    }
-    if nameLower.includes("consumer") || nameLower.includes("subscriber") || nameLower.includes("reader") {
-        return "consumer";
-    }
-    return "general";
 }
 
 function printAnalyzerPlan(string jarPath, string outputDir, boolean quietMode) {

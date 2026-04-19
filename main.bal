@@ -71,42 +71,12 @@ function executeAnalyze(string[] args) returns error? {
         return error("Dataset key cannot be empty");
     }
 
-    // Extract custom CLI options before parsing analyzer flags
-    string? clientRoleHint = ();
-    string? clientClassHint = ();
-
-    string[] flagArgs = [];
-    foreach string arg in args.slice(1) {
-        if arg.startsWith("--client-role-hint=") {
-            string val = arg.substring(19);
-            if val.length() > 0 {
-                clientRoleHint = val;
-            }
-        } else if arg.startsWith("client-role-hint=") {
-            string val = arg.substring(17);
-            if val.length() > 0 {
-                clientRoleHint = val;
-            }
-        } else if arg.startsWith("--client-class-hint=") {
-            string val = arg.substring(20);
-            if val.length() > 0 {
-                clientClassHint = val;
-            }
-        } else if arg.startsWith("client-class-hint=") {
-            string val = arg.substring(18);
-            if val.length() > 0 {
-                clientClassHint = val;
-            }
-        } else {
-            flagArgs.push(arg);
-        }
-    }
+    string[] flagArgs = args.slice(1);
 
     AnalyzerFlags flags = parseAnalyzerFlags(flagArgs);
 
     if isMavenCoordinate(sdkRef) {
-        analyzer:AnalyzerConfig analyzerConfig = buildAnalyzerConfig(args.slice(1), "", flags.quietMode,
-            clientRoleHint, clientClassHint);
+        analyzer:AnalyzerConfig analyzerConfig = buildAnalyzerConfig(args.slice(1), "", flags.quietMode);
 
         analyzer:AnalysisResult|analyzer:AnalyzerError analysisResult = analyzer:analyzeJavaSDK(
                 sdkRef,
@@ -129,8 +99,7 @@ function executeAnalyze(string[] args) returns error? {
     check ensureFileExists(sdkJarPath, "SDK JAR");
     check ensureFileExists(javadocJarPath, "Javadoc JAR");
 
-    analyzer:AnalyzerConfig analyzerConfig = buildAnalyzerConfig(args.slice(1), javadocJarPath, flags.quietMode,
-        clientRoleHint, clientClassHint);
+    analyzer:AnalyzerConfig analyzerConfig = buildAnalyzerConfig(args.slice(1), javadocJarPath, flags.quietMode);
 
     analyzer:AnalysisResult|analyzer:AnalyzerError analysisResult = analyzer:analyzeJavaSDK(
             sdkJarPath,
@@ -600,10 +569,6 @@ function executePipeline(string[] args) returns error? {
     check ensureFileExists(sdkJarPath, "SDK JAR");
     check ensureFileExists(javadocJarPath, "Javadoc JAR");
 
-    // Extract custom CLI options before parsing other flags
-    string? clientRoleHint = ();
-    string? clientClassHint = ();
-
     boolean quietMode = false;
     boolean autoYes = false;
     boolean runFixCode = true;
@@ -613,27 +578,7 @@ function executePipeline(string[] args) returns error? {
     string fixMode = "auto-apply";
     int maxFixIterations = 3;
     foreach string arg in args.slice(1) {
-        if arg.startsWith("--client-role-hint=") {
-            string val = arg.substring(19);
-            if val.length() > 0 {
-                clientRoleHint = val;
-            }
-        } else if arg.startsWith("client-role-hint=") {
-            string val = arg.substring(17);
-            if val.length() > 0 {
-                clientRoleHint = val;
-            }
-        } else if arg.startsWith("--client-class-hint=") {
-            string val = arg.substring(20);
-            if val.length() > 0 {
-                clientClassHint = val;
-            }
-        } else if arg.startsWith("client-class-hint=") {
-            string val = arg.substring(18);
-            if val.length() > 0 {
-                clientClassHint = val;
-            }
-        } else if arg == "quiet" || arg == "--quiet" || arg == "-q" {
+        if arg == "quiet" || arg == "--quiet" || arg == "-q" {
             quietMode = true;
         } else if arg == "yes" || arg == "--yes" || arg == "-y" {
             autoYes = true;
@@ -669,8 +614,7 @@ function executePipeline(string[] args) returns error? {
         io:println(string `  → Javadoc JAR: ${javadocJarPath}`);
     }
 
-    analyzer:AnalyzerConfig analyzerConfig = buildAnalyzerConfig(args.slice(1), javadocJarPath, quietMode,
-        clientRoleHint, clientClassHint);
+    analyzer:AnalyzerConfig analyzerConfig = buildAnalyzerConfig(args.slice(1), javadocJarPath, quietMode);
     analyzer:AnalysisResult|analyzer:AnalyzerError analysisResult = analyzer:analyzeJavaSDK(
             sdkJarPath,
             ANALYZER_OUTPUT_DIR,
@@ -684,51 +628,8 @@ function executePipeline(string[] args) returns error? {
     string metadataPath = resolveMetadataPath(datasetKey);
     check ensureFileExists(metadataPath, "Metadata JSON");
 
-    analyzer:SelectedClientInfo[] selectedClients = [];
-    analyzer:SelectedClientInfo[]|error selectedResult = loadSelectedClientsFromMetadata(metadataPath);
-    if selectedResult is analyzer:SelectedClientInfo[] {
-        selectedClients = selectedResult;
-    }
-
     check runPipelineStagesForDataset(datasetKey, analysisResult.methodsExtracted, autoYes, quietMode,
         runFixCode, runGenerateTests, runGenerateExamples, runGenerateDocs, fixMode, maxFixIterations);
-
-    if selectedClients.length() > 1 {
-        int variantIndex = 1;
-        foreach analyzer:SelectedClientInfo selectedClient in selectedClients {
-            if selectedClient.isRoot {
-                continue;
-            }
-
-            string suffix = buildClientVariantSuffix(selectedClient, variantIndex);
-            string variantDatasetKey = string `${datasetKey}-${suffix}`;
-
-            if !quietMode {
-                io:println(string `Preparing additional pipeline run for ${selectedClient.simpleName} as ${variantDatasetKey}`);
-            }
-
-            analyzer:AnalyzerConfig variantConfig = analyzerConfig;
-            variantConfig.clientClassHint = selectedClient.className;
-            variantConfig.clientRoleHint = selectedClient.role;
-
-            analyzer:AnalysisResult|analyzer:AnalyzerError variantAnalysis = analyzer:analyzeJavaSDK(
-                    sdkJarPath,
-                    ANALYZER_OUTPUT_DIR,
-                    variantConfig
-            );
-            if variantAnalysis is analyzer:AnalyzerError {
-                io:println(string `Analysis failed for ${variantDatasetKey}: ${variantAnalysis.message()}`);
-                return variantAnalysis;
-            }
-
-            string variantMetadataPath = resolveMetadataPath(variantDatasetKey);
-            check file:copy(variantAnalysis.metadataPath, variantMetadataPath, file:REPLACE_EXISTING);
-
-            check runPipelineStagesForDataset(variantDatasetKey, variantAnalysis.methodsExtracted, autoYes, quietMode,
-                runFixCode, runGenerateTests, runGenerateExamples, runGenerateDocs, fixMode, maxFixIterations);
-            variantIndex += 1;
-        }
-    }
 }
 
 function runPipelineStagesForDataset(string datasetKey, int extractedMethods, boolean autoYes, boolean quietMode,
@@ -869,47 +770,6 @@ function runPipelineStagesForDataset(string datasetKey, int extractedMethods, bo
         connectorResult.codeFixingRan, connectorResult.codeFixingSuccess, quietMode);
 }
 
-function loadSelectedClientsFromMetadata(string metadataPath) returns analyzer:SelectedClientInfo[]|error {
-    string metadataText = check io:fileReadString(metadataPath);
-    json|error parsed = metadataText.fromJsonString();
-    if parsed is error {
-        return parsed;
-    }
-
-    analyzer:StructuredSDKMetadata|error metadata = parsed.cloneWithType(analyzer:StructuredSDKMetadata);
-    if metadata is error {
-        return metadata;
-    }
-
-    analyzer:SelectedClientInfo[]? selectedClients = metadata.selectedClients;
-    if selectedClients is analyzer:SelectedClientInfo[] {
-        return selectedClients;
-    }
-    return [];
-}
-
-function buildClientVariantSuffix(analyzer:SelectedClientInfo selectedClient, int fallbackIndex) returns string {
-    string role = selectedClient.role.trim().toLowerAscii();
-    if role.length() == 0 || role == "general" {
-        role = selectedClient.simpleName.trim().toLowerAscii();
-    }
-
-    string token = "";
-    int i = 0;
-    while i < role.length() {
-        string ch = role.substring(i, i + 1);
-        if regex:matches(ch, "[a-z0-9]") {
-            token += ch;
-        }
-        i += 1;
-    }
-
-    if token.length() == 0 {
-        return string `client${fallbackIndex}`;
-    }
-    return token;
-}
-
 function printPipelineModuleHeader(string moduleName, boolean quietMode) {
     if quietMode {
         return;
@@ -1001,25 +861,10 @@ function parseAnalyzerFlags(string[] args) returns AnalyzerFlags {
     return flags;
 }
 
-function buildAnalyzerConfig(string[] args, string javadocJar, boolean quietMode,
-        string? clientRoleHint = (), string? clientClassHint = ()) returns analyzer:AnalyzerConfig {
+function buildAnalyzerConfig(string[] args, string javadocJar, boolean quietMode) returns analyzer:AnalyzerConfig {
     analyzer:AnalyzerConfig config = {
         quietMode: quietMode
     };
-
-    if clientRoleHint is string {
-        string roleHint = clientRoleHint.trim().toLowerAscii();
-        if roleHint.length() > 0 {
-            config.clientRoleHint = roleHint;
-        }
-    }
-
-    if clientClassHint is string {
-        string classHint = clientClassHint.trim();
-        if classHint.length() > 0 {
-            config.clientClassHint = classHint;
-        }
-    }
 
     if javadocJar.trim().length() > 0 {
         config.javadocPath = javadocJar;
@@ -1047,24 +892,6 @@ function buildAnalyzerConfig(string[] args, string javadocJar, boolean quietMode
             "--sources" => {
                 if i + 1 < args.length() {
                     config.sourcesPath = args[i + 1];
-                    i = i + 1;
-                }
-            }
-            "--client-role-hint" => {
-                if i + 1 < args.length() {
-                    string roleHint = args[i + 1].trim().toLowerAscii();
-                    if roleHint.length() > 0 {
-                        config.clientRoleHint = roleHint;
-                    }
-                    i = i + 1;
-                }
-            }
-            "--client-class-hint" => {
-                if i + 1 < args.length() {
-                    string classHint = args[i + 1].trim();
-                    if classHint.length() > 0 {
-                        config.clientClassHint = classHint;
-                    }
                     i = i + 1;
                 }
             }
@@ -1105,16 +932,6 @@ function buildAnalyzerConfig(string[] args, string javadocJar, boolean quietMode
                             "sources"|"--sources" => {
                                 if value.length() > 0 {
                                     config.sourcesPath = value;
-                                }
-                            }
-                            "client-role-hint"|"--client-role-hint" => {
-                                if value.length() > 0 {
-                                    config.clientRoleHint = value.toLowerAscii();
-                                }
-                            }
-                            "client-class-hint"|"--client-class-hint" => {
-                                if value.length() > 0 {
-                                    config.clientClassHint = value;
                                 }
                             }
                             _ => {
@@ -1224,9 +1041,6 @@ function printAnalyzeUsage() {
     io:println("  modules/sdkanalyzer/output/<dataset-key>-metadata.json");
     io:println();
     io:println("OPTIONS:");
-    io:println("  --client-role-hint=<role>   Prefer a client role (e.g., admin, producer, consumer)");
-    io:println("  --client-class-hint=<name>  Force selecting a specific client class");
-    io:println("  client detection is automatic for single-client and multi-client SDKs");
     io:println("  quiet                       Minimal logging output");
     io:println();
     io:println("EXAMPLE:");
@@ -1288,9 +1102,6 @@ function printPipelineUsage() {
     io:println("  --generate-docs         Run documentation generation phase");
     io:println("  --skip-docs             Skip documentation generation phase");
     io:println("  --fix-iterations=<n>    Maximum fixer iterations (default: 3)");
-    io:println("  --client-role-hint=<role>   Prefer a client role during analyzer selection");
-    io:println("  --client-class-hint=<name>  Force selecting a specific client class during analyzer stage");
-    io:println("  client detection is automatic for single-client and multi-client SDKs");
     io:println("  quiet                   Minimal logging output");
     io:println();
     io:println("EXAMPLE:");

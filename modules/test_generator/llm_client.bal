@@ -4,7 +4,7 @@ import ballerina/io;
 import ballerina/os;
 
 configurable string testGenModel = "claude-sonnet-4-6";
-configurable int testGenMaxTokens = 8192;
+configurable int testGenMaxTokens = 32000;
 
 type CommandResult record {|
     boolean success;

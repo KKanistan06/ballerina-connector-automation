@@ -122,24 +122,6 @@ function parseCommandLineArgs(string[] args) returns AnalyzerConfig {
                     i = i + 1;
                 }
             }
-            "--client-role-hint" => {
-                if i + 1 < args.length() {
-                    string roleHint = args[i + 1].trim().toLowerAscii();
-                    if roleHint.length() > 0 {
-                        config.clientRoleHint = roleHint;
-                    }
-                    i = i + 1;
-                }
-            }
-            "--client-class-hint" => {
-                if i + 1 < args.length() {
-                    string classHint = args[i + 1].trim();
-                    if classHint.length() > 0 {
-                        config.clientClassHint = classHint;
-                    }
-                    i = i + 1;
-                }
-            }
             _ => {
                 // Handle key=value pairs and --sources=path style
                 if arg.includes("=") {
@@ -183,16 +165,6 @@ function parseCommandLineArgs(string[] args) returns AnalyzerConfig {
                             "javadoc"|"--javadoc" => {
                                 if value.length() > 0 {
                                     config.javadocPath = value;
-                                }
-                            }
-                            "client-role-hint"|"--client-role-hint" => {
-                                if value.length() > 0 {
-                                    config.clientRoleHint = value.toLowerAscii();
-                                }
-                            }
-                            "client-class-hint"|"--client-class-hint" => {
-                                if value.length() > 0 {
-                                    config.clientClassHint = value;
                                 }
                             }
                             _ => {
@@ -243,9 +215,6 @@ function printUsage() {
     io:println("  include-deprecated    Include deprecated methods/classes");
     io:println("  exclude-packages=     Comma-separated packages to exclude");
     io:println("  methods-to-list=N     Number of top-ranked methods to include (default: 5)");
-    io:println("  --client-role-hint=   Prefer a client role (admin/producer/consumer)");
-    io:println("  --client-class-hint=  Force selecting a specific client class");
-    io:println("  client detection is automatic for single-client and multi-client SDKs");
     io:println();
     io:println("EXAMPLES:");
     io:println("  bal run -- analyze ./s3-2.25.16.jar ./s3-2.25.16-javadoc.jar ./output");

@@ -7,9 +7,6 @@ function analyzeConnectorForTests(string connectorPath, string[]? operationIds =
     string tomlContent = check io:fileReadString(connectorPath + "/ballerina/Ballerina.toml");
     string packageName = extractPackageName(tomlContent);
 
-    // Read mock server content
-    string mockServerContent = check io:fileReadString(connectorPath + "/ballerina/modules/mock.server/mock_server.bal");
-
     // Read client.bal to extract the init method 
     string clientContent = check io:fileReadString(connectorPath + "/ballerina/client.bal");
     string initMethodSignature = extractInitMethodComplete(clientContent);
@@ -29,6 +26,8 @@ function analyzeConnectorForTests(string connectorPath, string[]? operationIds =
 
     // read types.bal to get type definitions
     string typesContent = check io:fileReadString(connectorPath + "/ballerina/types.bal");
+    string connectionConfigDefinition = extractCompactTypeDefinition(typesContent, "ConnectionConfig");
+    string enumDefinitions = extractEnumDefinitions(typesContent);
 
     // extract all types referenced in the init method signatures
     string[] referencedTypes = findTypesInSignatures(initMethodSignature);
@@ -51,12 +50,57 @@ function analyzeConnectorForTests(string connectorPath, string[]? operationIds =
 
     return {
         packageName,
-        mockServerContent,
         initMethodSignature,
         referencedTypeDefinitions,
+        connectionConfigDefinition,
+        enumDefinitions,
         methodType,
         remoteMethodSignatures
     };
+}
+
+function extractEnumDefinitions(string typesContent) returns string {
+    string[] lines = regexp:split(re `\n`, typesContent);
+    string[] enumBlocks = [];
+    boolean inEnum = false;
+    int depth = 0;
+    string currentBlock = "";
+
+    foreach string line in lines {
+        string trimmed = line.trim();
+        if !inEnum && (trimmed.startsWith("public enum ") || trimmed.startsWith("enum ")) {
+            inEnum = true;
+            depth = 0;
+            currentBlock = line + "\n";
+            if line.includes("{") {
+                depth += 1;
+            }
+            if line.includes("}") {
+                depth -= 1;
+            }
+            if depth <= 0 {
+                enumBlocks.push(currentBlock.trim());
+                inEnum = false;
+                currentBlock = "";
+            }
+            continue;
+        }
+        if inEnum {
+            currentBlock += line + "\n";
+            if line.includes("{") {
+                depth += 1;
+            }
+            if line.includes("}") {
+                depth -= 1;
+            }
+            if depth <= 0 {
+                enumBlocks.push(currentBlock.trim());
+                inEnum = false;
+                currentBlock = "";
+            }
+        }
+    }
+    return string:'join("\n\n", ...enumBlocks);
 }
 
 function findInitSignature(string clientContent) returns string? {

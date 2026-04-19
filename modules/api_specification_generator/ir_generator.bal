@@ -35,8 +35,19 @@ public function generateIRFromMetadata(string metadataPath, GeneratorConfig conf
             config.thinkingBudgetTokens
     );
 
+    // Filter enum-typed entries from memberClasses before sending to the LLM.
+    // Enum types appear in memberClasses because they are referenced as collection
+    // element types (e.g. List<QueueAttributeName>). Their memberClasses entries list
+    // raw Java constant field names rather than actual SDK string values. Removing them
+    // prevents the LLM from picking up those constant names as enum values.
+    string metadataForLLM = metadataJson;
+    string|error filteredMeta = filterEnumClassesFromMemberClasses(metadataJson);
+    if filteredMeta is string {
+        metadataForLLM = filteredMeta;
+    }
+
     string systemPrompt = getIRGenerationSystemPrompt();
-    string userPrompt = getIRGenerationUserPrompt(metadataJson);
+    string userPrompt = getIRGenerationUserPrompt(metadataForLLM);
 
     // Call LLM
     json llmResponse = check callAnthropicAPI(anthropicCfg, systemPrompt, userPrompt);
@@ -76,8 +87,36 @@ public function generateIRFromMetadata(string metadataPath, GeneratorConfig conf
     }
     IntermediateRepresentation ir = irResult;
 
-    // Post-process: ensure every referenced type is defined in structures/enums/collections
-    return ensureIRCompleteness(ir);
+    // Replace LLM-generated enums with deterministically extracted enums from the
+    // metadata's `enums` map. This guarantees that the exact SDK string values are
+    // used (e.g. "VisibilityTimeout", "public-read") rather than whatever the LLM
+    // may have normalised or derived from the memberClasses constant field names.
+    IREnum[]|error programmaticEnums = extractEnumsFromMetadata(metadataJson);
+    if programmaticEnums is IREnum[] {
+        ir = {
+            sdkName: ir.sdkName,
+            version: ir.version,
+            clientName: ir.clientName,
+            clientDescription: ir.clientDescription,
+            connectionFields: ir.connectionFields,
+            functions: ir.functions,
+            structures: ir.structures,
+            enums: programmaticEnums,
+            collections: ir.collections
+        };
+    }
+
+    // Post-process: ensure every referenced type is defined in structures/enums/collections.
+    IntermediateRepresentation completeIr = ensureIRCompleteness(ir);
+
+    // Enrich any empty structures using field data already present in the metadata JSON.
+    // This resolves types that the LLM left with no fields by looking them up in
+    // memberClasses — no additional JAR parsing or LLM calls are required.
+    IntermediateRepresentation|error enrichedIr = enrichEmptyStructuresFromMetadata(completeIr, metadataJson);
+    if enrichedIr is IntermediateRepresentation {
+        return enrichedIr;
+    }
+    return completeIr;
 }
 
 # Extract the base type name from a Ballerina type expression.
@@ -351,4 +390,454 @@ function isCompleteJson(string jsonStr) returns boolean {
 
     // JSON is complete if all braces and brackets are balanced and we're not in a string
     return braceCount == 0 && bracketCount == 0 && !inString;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Programmatic enum extraction helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+# Derive a SCREAMING_SNAKE_CASE Ballerina enum member name from a raw value string.
+# The value itself is kept as-is for the `value` field; only the member name
+# is derived here.
+#
+# + rawValue - The cleaned enum value string (with " - default" already stripped)
+# + return - SCREAMING_SNAKE_CASE member name suitable for a Ballerina enum identifier
+function deriveMemberName(string rawValue) returns string {
+    string v = rawValue.trim();
+    if v.length() == 0 {
+        return "UNKNOWN";
+    }
+
+    // Phase 1: insert an underscore before each uppercase letter that directly follows
+    // a lowercase letter or a digit (CamelCase decomposition).
+    string phased = "";
+    int idx = 0;
+    while idx < v.length() {
+        string ch = v.substring(idx, idx + 1);
+        if idx > 0 {
+            string prev = v.substring(idx - 1, idx);
+            boolean chUpper = regex:matches(ch, "[A-Z]");
+            boolean prevLower = regex:matches(prev, "[a-z]");
+            boolean prevDigit = regex:matches(prev, "[0-9]");
+            if chUpper && (prevLower || prevDigit) {
+                phased += "_";
+            }
+        }
+        phased += ch;
+        idx += 1;
+    }
+
+    // Phase 2: replace every non-alphanumeric character with an underscore.
+    string replaced = "";
+    int idx2 = 0;
+    while idx2 < phased.length() {
+        string ch = phased.substring(idx2, idx2 + 1);
+        if regex:matches(ch, "[A-Za-z0-9]") {
+            replaced += ch;
+        } else {
+            replaced += "_";
+        }
+        idx2 += 1;
+    }
+
+    // Phase 3: uppercase everything.
+    string upper = replaced.toUpperAscii();
+
+    // Phase 4: collapse consecutive underscores.
+    upper = regex:replaceAll(upper, "_+", "_");
+
+    // Phase 5: trim leading and trailing underscores.
+    int trimStart = 0;
+    while trimStart < upper.length() && upper.substring(trimStart, trimStart + 1) == "_" {
+        trimStart += 1;
+    }
+    int trimEnd = upper.length();
+    while trimEnd > trimStart && upper.substring(trimEnd - 1, trimEnd) == "_" {
+        trimEnd -= 1;
+    }
+    if trimStart >= trimEnd {
+        return "UNKNOWN";
+    }
+    return upper.substring(trimStart, trimEnd);
+}
+
+# Return true when the value is a sentinel that should always be filtered from enums.
+#
+# + value - Cleaned enum value string
+# + return - true if this value is a sentinel
+function isSentinelEnumValue(string value) returns boolean {
+    string upper = value.toUpperAscii();
+    return upper == "UNKNOWN_TO_SDK_VERSION" || upper == "SDK_UNKNOWN" || upper == "UNKNOWN";
+}
+
+# Extract IREnum entries deterministically from the metadata JSON's top-level `enums` map.
+# The exact string values already stored in that map are used as the `value` field of each
+# IREnumValue — no further normalisation is applied beyond stripping the " - default" marker.
+#
+# + metadataJson - Raw metadata JSON string produced by sdk_analyzer
+# + return - Array of fully-populated IREnum entries, or error
+function extractEnumsFromMetadata(string metadataJson) returns IREnum[]|error {
+    json metaJson = check metadataJson.fromJsonString();
+
+    // Gracefully handle metadata that has no enums map at all.
+    json|error enumsFieldResult = metaJson.enums;
+    if enumsFieldResult is error {
+        return [];
+    }
+    map<json>|error enumsMapResult = enumsFieldResult.cloneWithType();
+    if enumsMapResult is error {
+        return [];
+    }
+    map<json> enumsMap = enumsMapResult;
+
+    IREnum[] result = [];
+    foreach string fqClassName in enumsMap.keys() {
+        json|() enumEntryOpt = enumsMap[fqClassName];
+        if enumEntryOpt is () {
+            continue;
+        }
+        json enumEntry = enumEntryOpt;
+
+        // Extract simpleName.
+        json|error snResult = enumEntry.simpleName;
+        if snResult is error {
+            continue;
+        }
+        string|error sn = snResult.cloneWithType(string);
+        if sn is error {
+            continue;
+        }
+        string simpleName = sn;
+
+        // Extract values array.
+        json|error valuesResult = enumEntry.values;
+        if valuesResult is error {
+            continue;
+        }
+        json[]|error valuesArrResult = valuesResult.cloneWithType();
+        if valuesArrResult is error {
+            continue;
+        }
+        json[] valuesArr = valuesArrResult;
+
+        IREnumValue[] irValues = [];
+        foreach json valJson in valuesArr {
+            string|error rawValResult = valJson.cloneWithType(string);
+            if rawValResult is error {
+                continue;
+            }
+            string rawVal = rawValResult;
+
+            // Strip the " - default" annotation to get the actual SDK string value.
+            string cleanVal = rawVal;
+            if cleanVal.endsWith(" - default") {
+                cleanVal = cleanVal.substring(0, cleanVal.length() - " - default".length()).trim();
+            }
+
+            // Filter sentinel values that carry no meaningful API information.
+            if isSentinelEnumValue(cleanVal) {
+                continue;
+            }
+
+            // Derive a stable SCREAMING_SNAKE_CASE member name from the value.
+            string memberName = deriveMemberName(cleanVal);
+            irValues.push({member: memberName, value: cleanVal});
+        }
+
+        // Only include the enum when at least one value was extracted.
+        if irValues.length() > 0 {
+            result.push({name: simpleName, kind: "ENUM", nativeType: "string", values: irValues});
+        }
+    }
+
+    return deduplicateEnumMemberNames(result);
+}
+
+# Ensure all enum member names are globally unique across every enum in the array.
+# When the same derived member name appears in more than one enum, the enum's own
+# SCREAMING_SNAKE name is prepended to each conflicting member so that every
+# member name is unambiguous in the generated Ballerina file.
+#
+# + enums - Input IREnum array that may have duplicate member names across enums
+# + return - IREnum array with globally unique member names
+function deduplicateEnumMemberNames(IREnum[] enums) returns IREnum[] {
+    // Count occurrences of each member name across all enums.
+    map<int> memberCount = {};
+    foreach IREnum e in enums {
+        foreach IREnumValue v in e.values {
+            int existing = memberCount[v.member] ?: 0;
+            memberCount[v.member] = existing + 1;
+        }
+    }
+
+    // For conflicting members, prefix with the enum's SCREAMING_SNAKE name.
+    IREnum[] result = [];
+    foreach IREnum e in enums {
+        string enumPrefix = deriveMemberName(e.name);
+        IREnumValue[] newValues = [];
+        foreach IREnumValue v in e.values {
+            int count = memberCount[v.member] ?: 0;
+            if count > 1 {
+                newValues.push({member: enumPrefix + "_" + v.member, value: v.value});
+            } else {
+                newValues.push(v);
+            }
+        }
+        result.push({name: e.name, kind: "ENUM", nativeType: "string", values: newValues});
+    }
+    return result;
+}
+
+# Remove entries from the metadata `memberClasses` map whose fully-qualified class name
+# also appears as a key in the `enums` map.
+#
+# Enum types appear in memberClasses only because they are referenced as collection
+# element types (e.g. List<QueueAttributeName>). Their entries in memberClasses list
+# the raw Java constant field names (e.g. VISIBILITY_TIMEOUT) rather than the actual
+# SDK string literals. Sending those entries to the LLM risks the LLM picking up the
+# constant names as enum values instead of the correct string literals from the enums map.
+#
+# + metadataJson - Raw metadata JSON string
+# + return - Modified metadata JSON string, or error if the JSON cannot be processed
+function filterEnumClassesFromMemberClasses(string metadataJson) returns string|error {
+    json metaJson = check metadataJson.fromJsonString();
+    map<json> metaMap = check metaJson.cloneWithType();
+
+    // Collect the set of fully-qualified enum class names.
+    json enumsRaw = metaMap["enums"] ?: {};
+    map<json> enumsMap = check enumsRaw.cloneWithType();
+
+    // Rebuild memberClasses without any entry whose key is a known enum class.
+    json memberClassesRaw = metaMap["memberClasses"] ?: {};
+    map<json> memberClasses = check memberClassesRaw.cloneWithType();
+
+    map<json> filteredMemberClasses = {};
+    foreach string key in memberClasses.keys() {
+        if !enumsMap.hasKey(key) {
+            json|() val = memberClasses[key];
+            if val is json {
+                filteredMemberClasses[key] = val;
+            }
+        }
+    }
+
+    metaMap["memberClasses"] = filteredMemberClasses;
+    json updatedJson = metaMap;
+    return updatedJson.toJsonString();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Empty-structure enrichment helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+# Map a Java simple type name to the corresponding Ballerina built-in type.
+# For unknown types the original name is returned unchanged.
+#
+# + javaType - Java type simple name (e.g. "String", "Integer", "boolean")
+# + return - Ballerina type name
+function mapJavaTypeToBallerinaType(string javaType) returns string {
+    match javaType {
+        "String"|"java.lang.String" => {
+            return "string";
+        }
+        "Integer"|"int"|"Long"|"long"|"Short"|"short" => {
+            return "int";
+        }
+        "Double"|"double"|"Float"|"float" => {
+            return "float";
+        }
+        "Boolean"|"boolean" => {
+            return "boolean";
+        }
+        "Byte"|"byte" => {
+            return "byte";
+        }
+        "BigDecimal"|"BigInteger"|"java.math.BigDecimal"|"java.math.BigInteger" => {
+            return "decimal";
+        }
+        "void" => {
+            return "()";
+        }
+        "Object"|"java.lang.Object" => {
+            return "anydata";
+        }
+        "URI"|"URL"|"java.net.URI"|"java.net.URL" => {
+            return "string";
+        }
+        "InputStream"|"OutputStream"|"java.io.InputStream"|"java.io.OutputStream" => {
+            return "byte[]";
+        }
+        "List"|"ArrayList"|"java.util.List"|"java.util.ArrayList" => {
+            return "anydata[]";
+        }
+        "Map"|"HashMap"|"java.util.Map"|"java.util.HashMap" => {
+            return "map<anydata>";
+        }
+        "Set"|"HashSet"|"java.util.Set"|"java.util.HashSet" => {
+            return "anydata[]";
+        }
+        _ => {
+            return javaType.trim().length() > 0 ? javaType : "anydata";
+        }
+    }
+}
+
+# Map a single raw field JSON object (from a metadata memberClasses[].fields entry)
+# to an IRField, resolving the Ballerina type using enumReference / memberReference /
+# typeName in that priority order.
+#
+# + fieldJson - Raw field JSON from metadata memberClasses entry
+# + enumSimpleNames - Set of simple names of known enum types for type resolution
+# + return - IRField or error
+function mapJsonFieldToIRField(json fieldJson, map<boolean> enumSimpleNames) returns IRField|error {
+    string fieldName = check (check fieldJson.name).cloneWithType(string);
+    boolean isRequired = check (check fieldJson.isRequired).cloneWithType(boolean);
+
+    string balType;
+
+    // Priority 1: field is directly typed as an enum.
+    json|error enumRefResult = fieldJson.enumReference;
+    if enumRefResult is string && enumRefResult.trim().length() > 0 {
+        string[] parts = regex:split(enumRefResult, "\\.");
+        balType = parts[parts.length() - 1];
+    } else {
+        // Priority 2: field is a collection whose element is a member-class type.
+        json|error memberRefResult = fieldJson.memberReference;
+        if memberRefResult is string && memberRefResult.trim().length() > 0 {
+            string[] parts = regex:split(memberRefResult, "\\.");
+            string memberSimpleName = parts[parts.length() - 1];
+
+            string fullType = "";
+            json|error ftResult = fieldJson.fullType;
+            if ftResult is string {
+                fullType = ftResult;
+            }
+
+            if fullType.includes("java.util.List") || fullType.includes("java.util.Set") {
+                balType = memberSimpleName + "[]";
+            } else if fullType.includes("java.util.Map") {
+                balType = "map<" + memberSimpleName + ">";
+            } else {
+                balType = memberSimpleName;
+            }
+        } else {
+            // Priority 3: plain scalar field — map using standard Java → Ballerina rules.
+            string typeName = "";
+            json|error tnResult = fieldJson.typeName;
+            if tnResult is string {
+                typeName = tnResult;
+            }
+            balType = mapJavaTypeToBallerinaType(typeName);
+        }
+    }
+
+    string kind = isRequired ? "Required" : "Included";
+    return {name: fieldName, kind: kind, 'type: balType, description: ""};
+}
+
+# Attempt to populate empty STRUCTURE entries in the IR using field data that is
+# already present in the metadata JSON's `memberClasses` map.
+#
+# For every structure whose `fields` array is empty the function looks up the
+# structure's simple name in `memberClasses`. When a match is found the fields are
+# converted to IRField entries using the same Java → Ballerina type mapping rules
+# that the LLM applies. Structures for which no source data can be found are left
+# as empty stubs (which is acceptable for pure marker / infrastructure types).
+#
+# + ir - IntermediateRepresentation potentially containing empty-field structures
+# + metadataJson - Raw metadata JSON string used as the field data source
+# + return - Enriched IR, or error if the metadata JSON cannot be processed
+function enrichEmptyStructuresFromMetadata(IntermediateRepresentation ir, string metadataJson)
+        returns IntermediateRepresentation|error {
+
+    json metaJson = check metadataJson.fromJsonString();
+
+    // Build a simpleName → entry lookup from memberClasses.
+    json|error memberClassesResult = metaJson.memberClasses;
+    map<json> memberClassesMap = {};
+    if memberClassesResult is json {
+        map<json>|error mcm = memberClassesResult.cloneWithType();
+        if mcm is map<json> {
+            memberClassesMap = mcm;
+        }
+    }
+
+    map<json> bySimpleName = {};
+    foreach string fqName in memberClassesMap.keys() {
+        json|() entry = memberClassesMap[fqName];
+        if entry is json {
+            json|error snResult = entry.simpleName;
+            if snResult is string {
+                bySimpleName[snResult] = entry;
+            }
+        }
+    }
+
+    // Build the set of known enum simple names so field type resolution can
+    // correctly identify enum-typed fields.
+    json|error enumsResult = metaJson.enums;
+    map<boolean> enumSimpleNames = {};
+    if enumsResult is json {
+        map<json>|error enumsMap = enumsResult.cloneWithType();
+        if enumsMap is map<json> {
+            foreach string fqName in enumsMap.keys() {
+                json|() enumEntry = enumsMap[fqName];
+                if enumEntry is json {
+                    json|error snResult = enumEntry.simpleName;
+                    if snResult is string {
+                        enumSimpleNames[snResult] = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Enrich structures that have zero fields.
+    IRStructure[] enrichedStructures = [];
+    foreach IRStructure s in ir.structures {
+        if s.fields.length() > 0 {
+            enrichedStructures.push(s);
+            continue;
+        }
+
+        // Try to find matching field data in memberClasses by simple name.
+        json|() entry = bySimpleName[s.name];
+        if entry is () {
+            enrichedStructures.push(s);
+            continue;
+        }
+
+        json|error fieldsResult = entry.fields;
+        if fieldsResult is error {
+            enrichedStructures.push(s);
+            continue;
+        }
+        json[]|error fieldsArr = fieldsResult.cloneWithType();
+        if fieldsArr is error {
+            enrichedStructures.push(s);
+            continue;
+        }
+
+        IRField[] irFields = [];
+        foreach json fieldJson in fieldsArr {
+            IRField|error irField = mapJsonFieldToIRField(fieldJson, enumSimpleNames);
+            if irField is IRField {
+                irFields.push(irField);
+            }
+        }
+
+        enrichedStructures.push({name: s.name, kind: "STRUCTURE", fields: irFields});
+    }
+
+    return {
+        sdkName: ir.sdkName,
+        version: ir.version,
+        clientName: ir.clientName,
+        clientDescription: ir.clientDescription,
+        connectionFields: ir.connectionFields,
+        functions: ir.functions,
+        structures: enrichedStructures,
+        enums: ir.enums,
+        collections: ir.collections
+    };
 }

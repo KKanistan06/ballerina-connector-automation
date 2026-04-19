@@ -133,8 +133,8 @@ function generateBuildGradleContent(string rootDir, string javaAdaptorCode) retu
     string? sdkArtifact = inferSdkArtifactFromRootDir(rootDir);
     string? sdkGroupId = inferSdkGroupIdFromImports(javaAdaptorCode, sdkArtifact);
 
-    string dependencyLines = "    // Ballerina runtime\n" +
-        "    implementation 'org.ballerinalang:ballerina-runtime:2201.12.2'\n";
+    string dependencyLines = "    // Ballerina runtime (compile-only to avoid bundling conflicting runtime in fat-jar)\n" +
+        "    compileOnly 'org.ballerinalang:ballerina-runtime:2201.13.1'\n";
 
     if sdkGroupId is string && sdkArtifact is string && sdkVersion is string {
         dependencyLines += "\n    // Connector dependency (from analyzed SDK)\n";
