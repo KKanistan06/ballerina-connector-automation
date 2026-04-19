@@ -16,9 +16,6 @@ output/
 **/IR-output/
 **/spec-output/
 
-# SDK test assets
-test-jars/
-
 # Logs and temp files
 *.log
 *.tmp
