@@ -1,0 +1,44 @@
+name: Generate API Spec
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_key:
+        description: "Dataset Key"
+        required: true
+
+jobs:
+  generate-spec:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout CLI repo
+        uses: actions/checkout@v4
+
+      - name: Setup Ballerina
+        uses: ballerina-platform/setup-ballerina@v1
+
+      - name: Build project
+        run: bal build
+
+      - name: Run analyze + generate
+        run: |
+          bal run -- analyze ${{ inputs.dataset_key }}
+          bal run -- generate ${{ inputs.dataset_key }}
+
+      - name: Copy API spec
+        run: |
+          mkdir spec
+          cp output/api-spec/api_spec.bal spec/
+
+      - name: Create PR to spec repo
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GH_PAT }}
+          commit-message: "Auto API spec for ${{ inputs.dataset_key }}"
+          branch: auto/spec-${{ inputs.dataset_key }}
+          title: "API Spec: ${{ inputs.dataset_key }}"
+          body: "Generated API spec"
+          base: main
+          path: spec/
+          repository: KKanistan06/generated-ballerina-spec
