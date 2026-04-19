@@ -26,8 +26,6 @@ jobs:
       # =========================
       - name: Checkout CLI repo
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       # =========================
       # Setup Java 21
@@ -46,7 +44,7 @@ jobs:
           curl -L https://dist.ballerina.io/downloads/2201.13.1/ballerina-2201.13.1-swan-lake-linux-x64.deb -o ballerina.deb
           sudo dpkg -i ballerina.deb
 
-      - name: Verify Ballerina version
+      - name: Verify Ballerina
         run: bal version
 
       # =========================
@@ -60,50 +58,56 @@ jobs:
           cd ../../..
 
       # =========================
-      # Clean project
+      # Clean + Build
       # =========================
       - name: Clean project
         run: bal clean
 
-      # =========================
-      # Build project
-      # =========================
       - name: Build project
         run: bal build
 
       # =========================
-      # Run analysis
+      # Run pipeline (IMPORTANT)
       # =========================
       - name: Run analyze + generate
         run: |
-          cd $GITHUB_WORKSPACE
           export PROJECT_ROOT=$GITHUB_WORKSPACE
 
           bal run -- analyze ${{ inputs.dataset_key }}
           bal run -- generate ${{ inputs.dataset_key }}
 
       # =========================
-      # Locate generated spec file
+      # Collect ALL required artifacts
       # =========================
-      - name: Locate API spec file
+      - name: Collect artifacts
         run: |
-          echo "Searching for generated spec file..."
+          DATASET=${{ inputs.dataset_key }}
 
-          FILE=$(find $GITHUB_WORKSPACE -type f -name "*${{ inputs.dataset_key }}*_spec.bal" | head -n 1)
+          mkdir -p dataset/$DATASET
 
-          if [ -z "$FILE" ]; then
-            echo "❌ Spec file not found!"
-            find $GITHUB_WORKSPACE -type f | grep spec || true
+          echo "🔍 Collecting metadata..."
+          META=$(find . -name "*${DATASET}*metadata.json" | head -n 1)
+
+          echo "🔍 Collecting IR..."
+          IR=$(find . -name "*${DATASET}*ir*.json" | head -n 1)
+
+          echo "🔍 Collecting spec..."
+          SPEC=$(find . -name "*${DATASET}*_spec.bal" | head -n 1)
+
+          if [ -z "$META" ] || [ -z "$IR" ] || [ -z "$SPEC" ]; then
+            echo "❌ Missing required artifacts"
+            echo "META=$META"
+            echo "IR=$IR"
+            echo "SPEC=$SPEC"
             exit 1
           fi
 
-          echo "Found: $FILE"
-
-          mkdir -p spec
-          cp "$FILE" spec/api_spec.bal
+          cp "$META" dataset/$DATASET/metadata.json
+          cp "$IR" dataset/$DATASET/ir.json
+          cp "$SPEC" dataset/$DATASET/api_spec.bal
 
       # =========================
-      # Checkout target repo
+      # Checkout spec repo
       # =========================
       - name: Checkout spec repo
         uses: actions/checkout@v4
@@ -113,14 +117,15 @@ jobs:
           path: spec-repo
 
       # =========================
-      # Copy spec into repo
+      # Copy dataset into repo
       # =========================
-      - name: Copy spec into repo
+      - name: Copy dataset
         run: |
-          cp -r spec/* spec-repo/
+          mkdir -p spec-repo/datasets
+          cp -r dataset/* spec-repo/datasets/
 
       # =========================
-      # Create Pull Request (ONLY PR HANDLING)
+      # Create PR
       # =========================
       - name: Create PR
         uses: peter-evans/create-pull-request@v6
@@ -129,9 +134,13 @@ jobs:
           path: spec-repo
           branch: auto/spec-${{ inputs.dataset_key }}
           base: main
-          commit-message: "Auto API spec for ${{ inputs.dataset_key }}"
-          title: "API Spec: ${{ inputs.dataset_key }}"
+          commit-message: "Auto API spec + metadata for ${{ inputs.dataset_key }}"
+          title: "Dataset: ${{ inputs.dataset_key }}"
           body: |
-            This PR contains the auto-generated API specification.
+            This PR includes:
+
+            - API Spec
+            - Metadata JSON
+            - Intermediate Representation (IR)
 
             Dataset: ${{ inputs.dataset_key }}
