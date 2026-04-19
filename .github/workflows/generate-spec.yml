@@ -79,21 +79,22 @@ jobs:
           bal run -- generate ${{ inputs.dataset_key }}
 
       # =========================
-      # ✅ FIXED: Correct output file handling
+      # 🔥 FIXED: dynamically find generated spec file
       # =========================
-      - name: Prepare API spec
+      - name: Locate API spec file
         run: |
-          FILE="modules/api_specification_generator/spec-output/${{ inputs.dataset_key }}_spec.bal"
+          echo "Searching for generated spec file..."
 
-          echo "Looking for file: $FILE"
+          FILE=$(find modules/api_specification_generator/spec-output -name "*${{ inputs.dataset_key }}*_spec.bal" | head -n 1)
 
-          if [ ! -f "$FILE" ]; then
-            echo "❌ Spec file not found!"
-            echo "Expected: $FILE"
-            echo "Listing generated files:"
-            find modules/api_specification_generator/spec-output -type f
+          if [ -z "$FILE" ]; then
+            echo "❌ No spec file found!"
+            echo "Dumping full directory:"
+            find modules/api_specification_generator/spec-output || true
             exit 1
           fi
+
+          echo "Found file: $FILE"
 
           mkdir -p spec
           cp "$FILE" spec/api_spec.bal
