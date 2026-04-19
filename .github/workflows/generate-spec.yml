@@ -7,38 +7,75 @@ on:
         description: "Dataset Key"
         required: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: generate-spec-${{ inputs.dataset_key }}
+  cancel-in-progress: true
+
 jobs:
   generate-spec:
     runs-on: ubuntu-latest
 
     steps:
+      # =========================
+      # Checkout CLI Repo
+      # =========================
       - name: Checkout CLI repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      # =========================
+      # Setup Ballerina
+      # =========================
       - name: Setup Ballerina
         uses: ballerina-platform/setup-ballerina@v1
 
+      # =========================
+      # Build Project
+      # =========================
       - name: Build project
         run: bal build
 
+      # =========================
+      # Run CLI Commands
+      # =========================
       - name: Run analyze + generate
         run: |
           bal run -- analyze ${{ inputs.dataset_key }}
           bal run -- generate ${{ inputs.dataset_key }}
 
-      - name: Copy API spec
+      # =========================
+      # Validate + Copy API Spec
+      # =========================
+      - name: Prepare API spec
         run: |
-          mkdir spec
+          if [ ! -f output/api-spec/api_spec.bal ]; then
+            echo "❌ api_spec.bal not found!"
+            exit 1
+          fi
+
+          mkdir -p spec
           cp output/api-spec/api_spec.bal spec/
 
+      # =========================
+      # Create PR to Spec Repo
+      # =========================
       - name: Create PR to spec repo
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GH_PAT }}
+          path: spec
           commit-message: "Auto API spec for ${{ inputs.dataset_key }}"
           branch: auto/spec-${{ inputs.dataset_key }}
           title: "API Spec: ${{ inputs.dataset_key }}"
-          body: "Generated API spec"
+          body: |
+            This PR contains the auto-generated API specification.
+
+            Dataset: ${{ inputs.dataset_key }}
+
           base: main
-          path: spec/
+          push-to-fork: false
           repository: KKanistan06/generated-ballerina-spec
