@@ -36,7 +36,7 @@ jobs:
           java-version: 21
 
       # =========================
-      # Install Ballerina 2201.13.1
+      # Install Ballerina
       # =========================
       - name: Install Ballerina
         run: |
@@ -66,9 +66,9 @@ jobs:
         run: bal build
 
       # =========================
-      # Run ANALYZE + GENERATE
+      # Run pipeline
       # =========================
-      - name: Run pipeline
+      - name: Run analyze + generate
         run: |
           export PROJECT_ROOT=$GITHUB_WORKSPACE
 
@@ -76,7 +76,7 @@ jobs:
           bal run -- generate ${{ inputs.dataset_key }}
 
       # =========================
-      # Collect ALL outputs
+      # Collect outputs (FIXED)
       # =========================
       - name: Collect outputs
         run: |
@@ -102,18 +102,20 @@ jobs:
           fi
           cp "$IR" artifacts/
 
-          # Spec
+          # Spec (🔥 FIX HERE)
           SPEC=$(find . -name "*${DATASET}*_spec.bal" | head -n 1)
           if [ -z "$SPEC" ]; then
             echo "❌ Spec file missing!"
             exit 1
           fi
-          cp "$SPEC" artifacts/api_spec.bal
+
+          # Rename correctly
+          cp "$SPEC" artifacts/${DATASET}_spec.bal
 
           echo "✅ All artifacts collected"
 
       # =========================
-      # Checkout target repo
+      # Checkout spec repo
       # =========================
       - name: Checkout spec repo
         uses: actions/checkout@v4
@@ -123,9 +125,9 @@ jobs:
           path: spec-repo
 
       # =========================
-      # Copy ALL artifacts
+      # Copy artifacts
       # =========================
-      - name: Copy artifacts to repo
+      - name: Copy artifacts
         run: |
           DATASET=${{ inputs.dataset_key }}
 
@@ -142,12 +144,10 @@ jobs:
           path: spec-repo
           branch: auto/spec-${{ inputs.dataset_key }}
           base: main
-          commit-message: "Auto API spec + metadata + IR for ${{ inputs.dataset_key }}"
+          commit-message: "API bundle for ${{ inputs.dataset_key }}"
           title: "API Spec Bundle: ${{ inputs.dataset_key }}"
           body: |
             Includes:
-            - API Spec
+            - API Spec (${ { inputs.dataset_key } }_spec.bal)
             - Metadata JSON
             - IR JSON
-
-            Dataset: ${{ inputs.dataset_key }}
