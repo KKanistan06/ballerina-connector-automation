@@ -1,15 +1,17 @@
+import wso2/connector_automation.utils;
+
 public function initExampleGenerator() returns error? {
-    return initAIService();
+    return utils:initAIService();
 }
 
 public function generateUseCaseAndFunctions(ConnectorDetails details, string[] usedFunctions) returns json|error {
     string prompt = getUsecasePrompt(details, usedFunctions);
 
-    if !isAIServiceInitialized() {
+    if !utils:isAIServiceInitialized() {
         return error("AI model not initialized. Please call initExampleGenerator() first.");
     }
 
-    string result = check callAI(prompt);
+    string result = check utils:callAI(prompt);
 
     return result.fromJsonString();
 }
@@ -17,11 +19,11 @@ public function generateUseCaseAndFunctions(ConnectorDetails details, string[] u
 public function generateExampleCode(ConnectorDetails details, string useCase, string targetedContext) returns string|error {
     string prompt = getExampleCodegenerationPrompt(details, useCase, targetedContext);
 
-    if !isAIServiceInitialized() {
+    if !utils:isAIServiceInitialized() {
         return error("AI model not initialized. Please call initExampleGenerator() first.");
     }
 
-    string result = check callAI(prompt);
+    string result = check utils:callAI(prompt);
 
     return result;
 }
@@ -29,11 +31,11 @@ public function generateExampleCode(ConnectorDetails details, string useCase, st
 public function generateExampleName(string useCase) returns string|error {
     string prompt = getExampleNamePrompt(useCase);
 
-    if !isAIServiceInitialized() {
+    if !utils:isAIServiceInitialized() {
         return error("AI model not initialized. Please call initExampleGenerator() first.");
     }
 
-    string|error result = callAI(prompt);
+    string|error result = utils:callAI(prompt);
     if result is error {
         return error("Failed to generate example name", result);
     }

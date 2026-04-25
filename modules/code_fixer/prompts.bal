@@ -192,6 +192,7 @@ COMMON FIX PATTERNS:
 - "cannot find symbol": Add the missing import or use fully-qualified class name.
 - "incompatible types": Cast or convert to the expected type.
 - "method does not override": Fix method signature to match parent.
+- "no suitable method found for X(Collection<WrongType>)": Use a correctly-typed collection variable already in scope, or convert elements to the expected type before passing.
 </INSTRUCTIONS>
 
 <OUTPUT_REQUIREMENTS>

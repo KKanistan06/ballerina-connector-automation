@@ -16,6 +16,8 @@ output/
 **/IR-output/
 
 
+test-jars/
+
 # Logs and temp files
 *.log
 *.tmp

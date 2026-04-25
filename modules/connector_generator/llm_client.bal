@@ -2,6 +2,8 @@ import ballerina/http;
 import ballerina/os;
 import ballerina/regex;
 
+import wso2/connector_automation.utils;
+
 # Check whether the Anthropic API key is configured.
 # + return - true if the ANTHROPIC_API_KEY env variable is set
 public function isAnthropicConfigured() returns boolean {
@@ -81,6 +83,24 @@ public function callAnthropicAPI(AnthropicConfig config, string systemPrompt,
     }
 
     json responseBody = check response.getJsonPayload();
+
+    json|error usageJson = responseBody.usage;
+    if usageJson is json {
+        int inputCount = 0;
+        int outputCount = 0;
+        json|error inputJson = usageJson.input_tokens;
+        json|error outputJson = usageJson.output_tokens;
+        if inputJson is json {
+            int|error parsed = int:fromString(inputJson.toString());
+            if parsed is int { inputCount = parsed; }
+        }
+        if outputJson is json {
+            int|error parsed = int:fromString(outputJson.toString());
+            if parsed is int { outputCount = parsed; }
+        }
+        utils:recordTokenUsage(inputCount, outputCount);
+    }
+
     json|error stopReason = responseBody.stop_reason;
     if stopReason is json && stopReason.toString() == "max_tokens" {
         return error(string `LLM response was truncated due to max_tokens limit (${config.maxTokens}). ` +

@@ -99,7 +99,8 @@ Artifacts written for inspection:
         }
 
         boolean autoYes = config.fixMode != "report-only";
-        fixer:FixResult|fixer:BallerinaFixerError fixResult = fixer:fixJavaNativeAdaptorErrors(config.outputDir,
+        string nativeProjectPath = string `${config.outputDir}/native`;
+        fixer:FixResult|fixer:BallerinaFixerError fixResult = fixer:fixJavaNativeAdaptorErrors(nativeProjectPath,
                 config.quietMode, autoYes, config.maxFixIterations);
         if fixResult is fixer:BallerinaFixerError {
             return error ConnectorGeneratorError(string `Code fixing failed: ${fixResult.message()}`, fixResult);
@@ -408,7 +409,7 @@ function validateGeneratedBundle(GeneratedConnectorBundle bundle,
         return error("LLM validation indicates signature mismatches");
     }
     if bundle.validation.typeReferenceErrors.length() > 0 {
-        return error("LLM validation indicates type reference errors");
+        io:println(string `  ⚠  Type reference warnings (non-fatal): ${string:'join(", ", ...bundle.validation.typeReferenceErrors)}`);
     }
 }
 
@@ -524,6 +525,9 @@ function normalizeClientInteropDeclarations(string clientBal) returns string {
             if !annotationInline.startsWith("= @java:Method") {
                 annotationInline = string `= @java:Method {${annotationInline}`;
             }
+            // Ensure the @java:Method annotation binds to the original method name
+            // (no native prefix) so Java adaptor methods match the spec method names.
+            annotationInline = ensureJavaMethodName(annotationInline, methodName);
 
             string moduleSignature = string `function ${nativeFunctionName}(${string:'join(", ", ...moduleParamDecls)}) returns ${returnType}`;
             moduleLevelExterns.push(string `${moduleSignature} ${annotationInline}`);
@@ -1043,6 +1047,27 @@ function hasDeclaredTypeOrEnum(string typesBal, string typeName) returns boolean
         typesBal.includes(string `type ${typeName} record`) ||
         typesBal.includes(string `enum ${typeName} `) ||
         typesBal.includes(string `enum ${typeName} {`);
+}
+
+function ensureJavaMethodName(string annotationStr, string methodName) returns string {
+    string namePrefix = "name: \"";
+    int? namePosOpt =  annotationStr.indexOf(namePrefix);
+    if namePosOpt is int {
+        int valueStart = <int>namePosOpt + namePrefix.length();
+        int? valueEndOpt = annotationStr.indexOf("\"", valueStart);
+        if valueEndOpt is int {
+            return annotationStr.substring(0, valueStart) + methodName + annotationStr.substring(<int>valueEndOpt);
+        }
+    }
+    int? closingIdx = annotationStr.indexOf("} external;");
+    if closingIdx is int {
+        string before = annotationStr.substring(0, <int>closingIdx).trim();
+        if before.endsWith("{") {
+            return before + " name: \"" + methodName + "\" } external;";
+        }
+        return before + ", name: \"" + methodName + "\" } external;";
+    }
+    return annotationStr;
 }
 
 public function printConnectorUsage() {

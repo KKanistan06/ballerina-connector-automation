@@ -22,7 +22,6 @@ import ballerina/regex;
 public function extractResponseText(json response) returns string {
     string responseText = "";
 
-    // Try to extract from standard Anthropic response format: response.content[0].text
     json|error contentArray = response.content;
     if contentArray is json && contentArray is json[] {
         json[] contentList = <json[]>contentArray;
@@ -31,7 +30,6 @@ public function extractResponseText(json response) returns string {
             json|error textField = firstContent.text;
             if textField is json {
                 responseText = textField.toString();
-                // Remove quotes if present
                 if responseText.startsWith("\"") && responseText.endsWith("\"") {
                     responseText = responseText.substring(1, responseText.length() - 1);
                 }
@@ -40,7 +38,6 @@ public function extractResponseText(json response) returns string {
         }
     }
 
-    // Fallback: use full response
     responseText = response.toString();
     return responseText;
 }
@@ -68,7 +65,7 @@ public function extractNumberFromResponse(string responseText) returns int|error
 # Parse initialization pattern from LLM response
 #
 # + responseText - Response text from LLM
-# + return - Pattern type (constructor, builder, static-factory, instance-factory, no-constructor, or empty if not found)
+# + return - Pattern type
 public function parseInitPattern(string responseText) returns string {
     string lower = responseText.toLowerAscii();
 
@@ -79,14 +76,14 @@ public function parseInitPattern(string responseText) returns string {
     } else if lower.includes("instance-factory") || lower.includes("instance factory") {
         return "instance-factory";
     } else if lower.includes("factory") {
-        return "static-factory"; // Default factory to static-factory
+        return "static-factory";
     } else if lower.includes("constructor") {
         return "constructor";
     } else if lower.includes("no-constructor") || lower.includes("no constructor") {
         return "no-constructor";
     }
 
-    return ""; // No pattern found
+    return "";
 }
 
 # Detect builder pattern methods in a class
@@ -131,7 +128,7 @@ public function detectFactoryMethods(MethodInfo[] methods) returns string[] {
 
 # Generate initialization code snippet for a pattern
 #
-# + patternName - Pattern type (constructor, builder, static-factory, instance-factory)
+# + patternName - Pattern type
 # + rootClient - The client class
 # + return - Initialization code snippet
 public function generateInitializationCode(string patternName, ClassInfo rootClient) returns string {

@@ -23,7 +23,6 @@ import ballerina/regex;
 # + roleHint - Optional target role hint (admin/producer/consumer)
 # + return - LLM client score based on LLM analysis
 public function calculateLLMClientScore(ClassInfo cls, ClassInfo[] allClasses, string? roleHint = ()) returns LLMClientScore|error {
-    // Enforce LLM-only scoring: call the Anthropic LLM and return its score.
     if !isAnthropicConfigured() {
         return error("Anthropic LLM not configured: LLM-only scoring required");
     }
@@ -33,14 +32,14 @@ public function calculateLLMClientScore(ClassInfo cls, ClassInfo[] allClasses, s
         return llmScore;
     }
 
-    return llmScore; // propagate error
+    return llmScore;
 }
 
 # Call LLM to score a class as potential root client.
 #
 # + cls - Class to evaluate
 # + allClasses - All classes in JAR
-# + roleHint - Optional target role hint (admin/producer/consumer)
+# + roleHint - Optional target role hint
 # + return - Score from LLM or error
 function callLLMForClientScoring(ClassInfo cls, ClassInfo[] allClasses, string? roleHint = ()) returns LLMClientScore|error {
     string systemPrompt = getClientScoringSystemPrompt(roleHint);
@@ -73,11 +72,9 @@ function callLLMForClientScoring(ClassInfo cls, ClassInfo[] allClasses, string? 
     }
 
     if responseText == "" {
-        // Last resort fallback
         responseText = response.toString();
     }
 
-    // Try to parse "SCORE:XX" format
     string[] matches = regex:split(responseText, "\\|");
     if matches.length() > 0 {
         string scoreStr = matches[0];

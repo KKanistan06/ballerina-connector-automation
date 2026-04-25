@@ -123,8 +123,6 @@ public function findMatchingFunction(string clientContent, string llmFunctionNam
         string functionDef = clientContent.substring(span.startIndex, span.endIndex);
 
         // Check if this function could match the LLM-provided name
-        // For resource functions like "get advisories" -> look for "get" method in path with "advisories"
-        // For remote functions, match by function name more directly
         if isMatchingFunction(functionDef, llmFunctionName) {
             return functionDef;
         }
@@ -135,16 +133,11 @@ public function findMatchingFunction(string clientContent, string llmFunctionNam
 
 // Helper to determine if a function definition matches the LLM-provided name
 public function isMatchingFunction(string functionDef, string llmFunctionName) returns boolean {
-    // Clean the function definition by removing Ballerina's path escapes `\.` -> `.`
-    // and convert to lowercase for case-insensitive comparison.
     string cleanFuncDef = regexp:replaceAll(re `\\\.`, functionDef, ".").toLowerAscii();
 
     // Convert the LLM function name to lowercase as well.
     string lowerLLMName = llmFunctionName.toLowerAscii();
 
-    // For resource functions, check if the cleaned function definition contains the LLM name
-    // For example: "get admin\.apps\.requests\.list" becomes "get admin.apps.requests.list"  
-    // and should match "get admin.apps.requests.list"
     if lowerLLMName.includes(" ") {
         // Resource function - check if the entire pattern matches
         return cleanFuncDef.includes(lowerLLMName);
@@ -270,11 +263,6 @@ public function extractTargetedContext(ConnectorDetails details, string[] functi
     string clientContent = details.clientBalContent;
     string typesContent = details.typesBalContent;
 
-    // io:println("=== EXTRACTING TARGETED CONTEXT ===");
-    // io:println("Original client.bal size: ", clientContent.length(), " chars");
-    // io:println("Original types.bal size: ", typesContent.length(), " chars");
-    // io:println("Function names to match: ", functionNames.toString());
-
     string context = "// CLIENT INITIALIZATION\n\n";
     string[] allDependentTypes = [];
 
@@ -299,14 +287,10 @@ public function extractTargetedContext(ConnectorDetails details, string[] functi
         if matchedSignature is string {
             context += matchedSignature + "\n\n";
             matchedFunctions += 1;
-            // io:println("✓ Matched function: '", funcName, "' -> signature length: ", matchedSignature.length(), " chars");
         } else {
-            // io:println("✗ No match found for: '", funcName, "'");
         }
     }
-    //  io:println("Total matched functions: ", matchedFunctions, "/", functionNames.length());
 
-    // Find all types used in the function signatures (parameters and return types)
     string[] directTypes = findTypesInSignatures(context);
     allDependentTypes.push(...directTypes);
 
@@ -324,11 +308,6 @@ public function extractTargetedContext(ConnectorDetails details, string[] functi
             }
         }
     }
-
-    // io:println("Final targeted context size: ", context.length(), " chars");
-    // int originalSize = clientContent.length() + typesContent.length();
-    // int reductionPercent = (originalSize - context.length()) * 100 / originalSize;
-    // io:println("Size reduction: ", reductionPercent, "%");
 
     return context;
 }
@@ -392,8 +371,6 @@ function findTypesInSignatures(string signatures) returns string[] {
 }
 
 function extractBlock(string content, string startPattern, string openChar, string closeChar) returns string {
-    // This is a simplified block extractor. It finds the start pattern and then balances
-    // the open/close characters to find the end of the block.
     int? startIndex = content.indexOf(startPattern);
     if startIndex is () {
         return "";
@@ -490,7 +467,7 @@ function extractFunctionDocumentation(string content, int functionStartIndex) re
                 }
             }
 
-            if docLines.length() > 0 && docLines.length() <= 5 { // Limit doc comment size
+            if docLines.length() > 0 && docLines.length() <= 5 { 
                 docComment = string:'join("\n", ...docLines);
             }
         }
@@ -502,7 +479,7 @@ function extractFunctionDocumentation(string content, int functionStartIndex) re
 // Limited depth nested type search to avoid infinite recursion
 function findEssentialNestedTypes(string[] typesToSearch, string typesContent, string[] foundTypes, int maxDepth) {
     if maxDepth <= 0 {
-        return; // Stop recursion at max depth
+        return;
     }
 
     string[] newTypesFound = [];
@@ -534,7 +511,6 @@ function findEssentialNestedTypes(string[] typesToSearch, string typesContent, s
 function isEssentialType(string typeName) returns boolean {
     string lowerType = typeName.toLowerAscii();
 
-    // Skip non-essential types
     if lowerType.endsWith("headers") || lowerType.endsWith("queries") ||
         lowerType.endsWith("header") || lowerType.endsWith("query") ||
         lowerType.startsWith("http") || lowerType.startsWith("internal") ||
@@ -554,16 +530,16 @@ function extractCompactTypeDefinition(string typesContent, string typeName) retu
         typeDef = extractBlock(typesContent, "public type " + typeName + " ", ";", ";");
     }
 
-    if typeDef != "" && typeDef.length() > 1000 { // Limit type definition size
+    if typeDef != "" && typeDef.length() > 1000 { 
         // If type is too large, create a simplified version
         string[] lines = regexp:split(re `\n`, typeDef);
-        if lines.length() > 15 { // If too many fields, show only first 10
+        if lines.length() > 15 {
             string[] limitedLines = [];
             int count = 0;
             foreach string line in lines {
                 limitedLines.push(line);
                 count += 1;
-                if count >= 12 { // Keep first few lines including opening
+                if count >= 12 {
                     limitedLines.push("    // ... (additional fields omitted for brevity)");
                     // Find and add the closing brace
                     foreach int i in (lines.length() - 3) ... (lines.length() - 1) {
@@ -630,7 +606,6 @@ function packAndPushConnector(string connectorPath) returns error? {
         }
     }
 
-    // Execute bal push --repository=local with working directory specified
     io:println("Running 'bal push --repository=local' in connector directory...");
     int|error pushExitCode = runShellInDir(ballerinaDir, "bal push --repository=local");
     if pushExitCode is error {
@@ -678,11 +653,21 @@ function runShellInDir(string workingDir, string shellCommand) returns int|error
 }
 
 function prepareNativeInteropForPack(string connectorPath, string ballerinaDir) returns error? {
-    check ensureBuildGradleCompatibility(connectorPath);
-    check ensureBuildGradleProducesFatJar(connectorPath);
+    boolean|error hasBuildGradle = file:test(connectorPath + "/build.gradle", file:EXISTS);
+    boolean|error hasNativeBuildGradle = file:test(connectorPath + "/native/build.gradle", file:EXISTS);
+    boolean nativeRequired = (hasBuildGradle is boolean && hasBuildGradle) ||
+                             (hasNativeBuildGradle is boolean && hasNativeBuildGradle);
+    if !nativeRequired {
+        return;
+    }
+
+    string nativeDir = resolveNativeProjectDir(connectorPath);
+
+    check ensureBuildGradleCompatibility(nativeDir);
+    check ensureBuildGradleProducesFatJar(nativeDir);
 
     io:println("Building native adaptor JAR...");
-    record {|int exitCode; string stdout; string stderr;|}|error gradleRun = runGradleJarInDir(connectorPath);
+    record {|int exitCode; string stdout; string stderr;|}|error gradleRun = runGradleJarInDir(nativeDir);
     if gradleRun is error {
         return error("Failed to execute 'gradle jar'", gradleRun);
     }
@@ -694,17 +679,17 @@ function prepareNativeInteropForPack(string connectorPath, string ballerinaDir) 
             io:println(string `  Gradle error: ${firstGradleError}`);
         }
         code_fixer:FixResult|code_fixer:BallerinaFixerError javaFixResult =
-            code_fixer:fixJavaNativeAdaptorErrors(connectorPath, quietMode = true, autoYes = true);
+            code_fixer:fixJavaNativeAdaptorErrors(nativeDir, quietMode = true, autoYes = true);
 
         if javaFixResult is code_fixer:BallerinaFixerError {
-            string? existingJarPath = findNativeJarRelativePath(connectorPath);
+            string? existingJarPath = findNativeJarRelativePath(nativeDir);
             if existingJarPath is string {
                 io:println("Java native auto-fix failed; using existing native adaptor JAR...");
             } else {
                 return error("'gradle jar' command failed and Java native auto-fix failed", javaFixResult);
             }
         } else {
-            record {|int exitCode; string stdout; string stderr;|}|error retryGradleRun = runGradleJarInDir(connectorPath);
+            record {|int exitCode; string stdout; string stderr;|}|error retryGradleRun = runGradleJarInDir(nativeDir);
             if retryGradleRun is error {
                 return error("Failed to execute retry 'gradle jar'", retryGradleRun);
             }
@@ -714,11 +699,11 @@ function prepareNativeInteropForPack(string connectorPath, string ballerinaDir) 
                 if retryGradleError.length() > 0 {
                     io:println(string `  Retry gradle error: ${retryGradleError}`);
                 }
-                boolean fallbackCopied = check tryUseExistingNativeJar(connectorPath);
+                boolean fallbackCopied = check tryUseExistingNativeJar(nativeDir);
                 if fallbackCopied {
                     io:println("Retry 'gradle jar' failed; reused existing native adaptor JAR for this dataset...");
                 }
-                string? existingJarPath = findNativeJarRelativePath(connectorPath);
+                string? existingJarPath = findNativeJarRelativePath(nativeDir);
                 if existingJarPath is string {
                     io:println("Retry 'gradle jar' failed; using existing native adaptor JAR...");
                 } else {
@@ -729,12 +714,12 @@ function prepareNativeInteropForPack(string connectorPath, string ballerinaDir) 
         }
     }
 
-    string? jarRelativePath = findNativeJarRelativePath(connectorPath);
+    string? jarRelativePath = findNativeJarRelativePath(nativeDir);
     if jarRelativePath is () {
         return error("Native adaptor JAR not found under build/libs after gradle build");
     }
 
-    check ensureClientInteropClassBinding(connectorPath, ballerinaDir);
+    check ensureClientInteropClassBinding(nativeDir, ballerinaDir);
 
     string tomlPath = ballerinaDir + "/Ballerina.toml";
     string tomlContent = check io:fileReadString(tomlPath);
@@ -754,7 +739,6 @@ path = "${<string>jarRelativePath}"`;
     }
 
     if updatedToml.includes("[[platform.java21.dependency]]") {
-        // Keep existing blocks; append the required JAR block if missing
         if !updatedToml.includes(<string>jarRelativePath) {
             updatedToml += "\n\n" + dependencyBlock + "\n";
         }
@@ -904,7 +888,28 @@ function executeShellInDir(string workingDir, string shellCommand) returns recor
     };
 }
 
+function resolveNativeProjectDir(string connectorPath) returns string {
+    string nativeSubdir = connectorPath + "/native";
+    boolean|error nativeExists = file:test(nativeSubdir + "/build.gradle", file:EXISTS);
+    if nativeExists is boolean && nativeExists {
+        return nativeSubdir;
+    }
+    return connectorPath;
+}
+
 function runGradleJarInDir(string workingDir) returns record {|int exitCode; string stdout; string stderr;|}|error {
+    string buildRoot = workingDir;
+    string gradlewInCurrent = workingDir + "/gradlew";
+    boolean hasLocalGradlew = check file:test(gradlewInCurrent, file:EXISTS);
+    if !hasLocalGradlew {
+        string parentDir = resolveParentDir(workingDir);
+        string gradlewInParent = parentDir + "/gradlew";
+        boolean hasParentGradlew = check file:test(gradlewInParent, file:EXISTS);
+        if hasParentGradlew {
+            buildRoot = parentDir;
+        }
+    }
+
     string jdkEnvPrefix = "if [ -x /usr/lib/jvm/java-21-openjdk-amd64/bin/javac ]; then export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64; " +
         "elif command -v javac >/dev/null 2>&1; then export JAVA_HOME=\"$(dirname $(dirname $(readlink -f $(command -v javac))))\"; fi; " +
         "if [ -n \"$JAVA_HOME\" ]; then export PATH=\"$JAVA_HOME/bin:$PATH\"; fi; " +
@@ -917,7 +922,16 @@ function runGradleJarInDir(string workingDir) returns record {|int exitCode; str
         "elif command -v gradle >/dev/null 2>&1; then gradle $gradleJvmArg jar --console=plain --no-daemon; " +
         "else echo 'Gradle executable not found (checked ./gradlew, ../../sdkanalyzer/native/gradlew, gradle in PATH)' >&2; exit 127; fi";
 
-    return executeShellInDir(workingDir, jarCommand);
+    return executeShellInDir(buildRoot, jarCommand);
+}
+
+function resolveParentDir(string dirPath) returns string {
+    string normalized = dirPath.endsWith("/") ? dirPath.substring(0, dirPath.length() - 1) : dirPath;
+    int? lastSlash = normalized.lastIndexOf("/");
+    if lastSlash is int && lastSlash > 0 {
+        return normalized.substring(0, lastSlash);
+    }
+    return dirPath;
 }
 
 function firstNonEmptyLine(string text) returns string {
@@ -938,7 +952,7 @@ function tryUseExistingNativeJar(string connectorPath) returns boolean|error {
         return false;
     }
 
-    string fallbackJar = string `/home/kanistan/JavaPhaser/modules/connector_generator/output/${datasetKey}/build/libs/generated-native-adaptor.jar`;
+    string fallbackJar = string `/home/kanistan/JavaPhaser/modules/connector_generator/output/${datasetKey}/native/build/libs/generated-native-adaptor.jar`;
     boolean|error fallbackExists = file:test(fallbackJar, file:EXISTS);
     if fallbackExists is error {
         return fallbackExists;
@@ -960,6 +974,10 @@ function extractDatasetKey(string connectorPath) returns string {
     string trimmed = connectorPath.trim();
     if trimmed.endsWith("/") {
         trimmed = trimmed.substring(0, trimmed.length() - 1);
+    }
+
+    if trimmed.endsWith("/native") {
+        trimmed = trimmed.substring(0, trimmed.length() - 7);
     }
 
     int? idx = trimmed.lastIndexOf("/");
@@ -1087,6 +1105,8 @@ function findNativeJarRelativePath(string connectorPath) returns string? {
         return;
     }
 
+    string relativePrefix = connectorPath.endsWith("/native") ? "../native/build/libs/" : "../build/libs/";
+
     file:MetaData[]|error entries = file:readDir(libsDir);
     if entries is error {
         return;
@@ -1095,7 +1115,7 @@ function findNativeJarRelativePath(string connectorPath) returns string? {
     foreach file:MetaData entry in entries {
         string absPath = entry.absPath;
         if absPath.endsWith("/generated-native-adaptor.jar") {
-            return "../build/libs/generated-native-adaptor.jar";
+            return relativePrefix + "generated-native-adaptor.jar";
         }
     }
 
@@ -1105,7 +1125,7 @@ function findNativeJarRelativePath(string connectorPath) returns string? {
             int? idx = absPath.lastIndexOf("/");
             if idx is int {
                 string fileName = absPath.substring(<int>idx + 1);
-                return string `../build/libs/${fileName}`;
+                return relativePrefix + fileName;
             }
         }
     }

@@ -1,9 +1,9 @@
 import ballerina/file;
 import ballerina/io;
 
-# Write generated connector files to module-local output directories.
+# Write generated connector files into the pre-existing template output directories.
 #
-# + clientCode - generated Ballerina client class code 
+# + clientCode - generated Ballerina client class code
 # + typesCode - generated Ballerina types code
 # + javaAdaptorCode - generated Java native adaptor code
 # + sdkToken - root client name from SDK metadata, used for naming files and classes
@@ -23,14 +23,14 @@ public function writeConnectorArtifacts(string clientCode, string typesCode, str
     );
 }
 
-# Write generated connector files to module-local output directories with explicit file names.
+# Write generated connector files into the pre-existing template output directories with explicit file names.
 #
 # + clientCode - generated Ballerina client class code
 # + typesCode - generated Ballerina types code
 # + javaAdaptorCode - generated Java native adaptor code
 # + clientFileName - output client file name
 # + typesFileName - output types file name
-# + nativeRelativePath - native adaptor path relative to output root (typically under src/main/java)
+# + nativeRelativePath - native adaptor path relative to output root
 # + outputDir - root output directory for generated artifacts
 # + return - paths of the written files or an error if writing fails
 public function writeConnectorArtifactsWithNames(string clientCode, string typesCode, string javaAdaptorCode,
@@ -39,20 +39,24 @@ public function writeConnectorArtifactsWithNames(string clientCode, string types
         returns record {|string clientPath; string typesPath; string nativePath;|}|error {
     string rootDir = outputDir.trim().length() == 0 ? "modules/connector_generator/output" : outputDir;
     string ballerinaDir = string `${rootDir}/ballerina`;
-    string nativePath = toNativeSourcePath(rootDir, nativeRelativePath);
-    string nativeDir = parentDir(nativePath);
+    string nativeRootDir = string `${rootDir}/native`;
+    string nativePath = check resolveNativeJavaFilePath(nativeRootDir, nativeRelativePath);
 
     check ensureDir(ballerinaDir);
-    check ensureDir(nativeDir);
-    check ensureNativeInteropBuildFiles(rootDir, javaAdaptorCode);
-    check ensureBallerinaPackageFiles(ballerinaDir);
+    check injectSdkDependency(nativeRootDir, rootDir, javaAdaptorCode);
+    check injectBallerinaGradleDependency(ballerinaDir, rootDir, javaAdaptorCode);
 
     string clientPath = string `${ballerinaDir}/${clientFileName}`;
     string typesPath = string `${ballerinaDir}/${typesFileName}`;
 
-    check io:fileWriteString(clientPath, clientCode);
+    // Derive the correct fully-qualified class name from the actual Java file path.
+    string? fqClassName = deriveJavaFqClassName(nativePath);
+    string finalClientCode = fqClassName is string ? fixJavaMethodClassReferences(clientCode, fqClassName) : clientCode;
+    string finalJavaCode = fqClassName is string ? fixJavaPackageDeclaration(javaAdaptorCode, fqClassName) : javaAdaptorCode;
+
+    check io:fileWriteString(clientPath, finalClientCode);
     check io:fileWriteString(typesPath, typesCode);
-    check io:fileWriteString(nativePath, javaAdaptorCode);
+    check io:fileWriteString(nativePath, finalJavaCode);
 
     return {
         clientPath: clientPath,
@@ -68,18 +72,57 @@ function ensureDir(string dirPath) returns error? {
     }
 }
 
-function toNativeSourcePath(string rootDir, string nativeRelativePath) returns string {
+function resolveNativeJavaFilePath(string nativeRootDir, string nativeRelativePath) returns string|error {
+    string srcMainJava = string `${nativeRootDir}/src/main/java`;
+    boolean srcExists = check file:test(srcMainJava, file:EXISTS);
+    if srcExists {
+        string leafDir = check findLeafDirectory(srcMainJava);
+        string javaFileName = extractJavaFileName(nativeRelativePath);
+        return string `${leafDir}/${javaFileName}`;
+    }
+    string fallback = toNativeSourcePath(nativeRootDir, nativeRelativePath);
+    check ensureDir(parentDir(fallback));
+    return fallback;
+}
+
+// Recursively descend into the single-child subdirectory chain until a leaf (no subdirs) is reached.
+function findLeafDirectory(string dirPath) returns string|error {
+    file:MetaData[] entries = check file:readDir(dirPath);
+    string[] subDirs = [];
+    foreach file:MetaData entry in entries {
+        if entry.dir {
+            subDirs.push(entry.absPath);
+        }
+    }
+    if subDirs.length() == 1 {
+        return findLeafDirectory(subDirs[0]);
+    }
+    return dirPath;
+}
+
+// Extract just the .java filename from a relative path.
+function extractJavaFileName(string nativeRelativePath) returns string {
+    string trimmed = nativeRelativePath.trim();
+    int? idx = trimmed.lastIndexOf("/");
+    string baseName = idx is int ? trimmed.substring(<int>idx + 1) : trimmed;
+    if baseName.endsWith(".java") {
+        return baseName;
+    }
+    return string `${baseName}.java`;
+}
+
+function toNativeSourcePath(string nativeRootDir, string nativeRelativePath) returns string {
     string trimmed = nativeRelativePath.trim();
     if trimmed.length() == 0 {
-        return string `${rootDir}/src/main/java/NativeAdaptor.java`;
+        return string `${nativeRootDir}/src/main/java/NativeAdaptor.java`;
     }
     if trimmed.startsWith("src/main/java/") {
-        return string `${rootDir}/${trimmed}`;
+        return string `${nativeRootDir}/${trimmed}`;
     }
     if trimmed.endsWith(".java") {
-        return string `${rootDir}/src/main/java/${trimmed}`;
+        return string `${nativeRootDir}/src/main/java/${trimmed}`;
     }
-    return string `${rootDir}/src/main/java/${trimmed}.java`;
+    return string `${nativeRootDir}/src/main/java/${trimmed}.java`;
 }
 
 function parentDir(string path) returns string {
@@ -90,126 +133,212 @@ function parentDir(string path) returns string {
     return ".";
 }
 
-function ensureNativeInteropBuildFiles(string rootDir, string javaAdaptorCode) returns error? {
-    string settingsGradlePath = string `${rootDir}/settings.gradle`;
-    string buildGradlePath = string `${rootDir}/build.gradle`;
-
-    boolean settingsExists = check file:test(settingsGradlePath, file:EXISTS);
-    if !settingsExists {
-        check io:fileWriteString(settingsGradlePath, "rootProject.name = 'generated-native-adaptor'\n");
-    }
-
+// Inject the SDK implementation dependency.
+function injectSdkDependency(string nativeRootDir, string rootDir, string javaAdaptorCode) returns error? {
+    string buildGradlePath = string `${nativeRootDir}/build.gradle`;
     boolean buildExists = check file:test(buildGradlePath, file:EXISTS);
     if !buildExists {
-        string buildGradle = generateBuildGradleContent(rootDir, javaAdaptorCode);
-        check io:fileWriteString(buildGradlePath, buildGradle);
         return;
     }
 
-    string existingBuildGradle = check io:fileReadString(buildGradlePath);
-    boolean hasFatJar = (existingBuildGradle.includes("archiveFileName = 'generated-native-adaptor.jar'") ||
-        existingBuildGradle.includes("archiveName = 'generated-native-adaptor.jar'")) &&
-        existingBuildGradle.includes("configurations.runtimeClasspath");
-    if !hasFatJar {
-        string fatJarBlock = string `
-
-    jar {
-        if (project.gradle.gradleVersion.tokenize('.')[0].toInteger() >= 5) {
-        archiveFileName = 'generated-native-adaptor.jar'
-    } else {
-        archiveName = 'generated-native-adaptor.jar'
-    }
-    from {
-        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
-    }
-}
-`;
-        check io:fileWriteString(buildGradlePath, existingBuildGradle.trim() + fatJarBlock + "\n");
-    }
-}
-
-function generateBuildGradleContent(string rootDir, string javaAdaptorCode) returns string {
     string? sdkVersion = inferSdkVersionFromRootDir(rootDir);
     string? sdkArtifact = inferSdkArtifactFromRootDir(rootDir);
     string? sdkGroupId = inferSdkGroupIdFromImports(javaAdaptorCode, sdkArtifact);
 
-    string dependencyLines = "    // Ballerina runtime (compile-only to avoid bundling conflicting runtime in fat-jar)\n" +
-        "    compileOnly 'org.ballerinalang:ballerina-runtime:2201.13.1'\n";
-
-    if sdkGroupId is string && sdkArtifact is string && sdkVersion is string {
-        dependencyLines += "\n    // Connector dependency (from analyzed SDK)\n";
-        dependencyLines += string `    implementation '${sdkGroupId}:${sdkArtifact}:${sdkVersion}'\n`;
+    if !(sdkGroupId is string && sdkArtifact is string && sdkVersion is string) {
+        return;
     }
 
-    return string `plugins {
-    id 'java'
-}
-
-repositories {
-    mavenLocal()
-
-    maven {
-        url = 'https://maven.wso2.org/nexus/content/groups/wso2-public/'
+    // Idempotency: skip if artifact already present in the file
+    string buildGradleContent = check io:fileReadString(buildGradlePath);
+    if buildGradleContent.includes(string `name: '${sdkArtifact}'`) {
+        return;
     }
 
-    maven {
-        url = 'https://repo.maven.apache.org/maven2'
-    }
+    // Write version property into root gradle.properties
+    string propName = deriveSdkVersionPropertyName(<string>sdkArtifact);
+    check ensureGradleProperty(rootDir, propName, <string>sdkVersion);
 
-    maven {
-        url = 'https://maven.pkg.github.com/ballerina-platform/ballerina-lang'
-        credentials {
-            username = project.findProperty("gpr.user") ?: System.getenv("packageUser") ?: ""
-            password = project.findProperty("gpr.key") ?: System.getenv("packagePAT") ?: ""
-        }
-    }
+    // Inject implementation line inside the existing dependencies {} block.
+    string sdkLine = "    implementation group: '" + <string>sdkGroupId + "', name: '" + <string>sdkArtifact + "', version: \"${" + propName + "}\"";
 
-    maven {
-        url = 'https://maven.pkg.github.com/ballerina-platform/ballerina-library'
-        credentials {
-            username = project.findProperty("gpr.user") ?: System.getenv("packageUser") ?: ""
-            password = project.findProperty("gpr.key") ?: System.getenv("packagePAT") ?: ""
+    int? depsStart = buildGradleContent.indexOf("dependencies {");
+    if depsStart is int {
+        int? depsEnd = buildGradleContent.indexOf("\n}", <int>depsStart);
+        if depsEnd is int {
+            string updated = buildGradleContent.substring(0, <int>depsEnd)
+                + string `
+${sdkLine}
+`
+                + buildGradleContent.substring(<int>depsEnd);
+            check io:fileWriteString(buildGradlePath, updated);
+            return;
         }
     }
 }
 
-sourceCompatibility = '21'
-targetCompatibility = '21'
+// Inject all SDK-specific entries into ballerina/build.gradle.
+function injectBallerinaGradleDependency(string ballerinaDir, string rootDir, string javaAdaptorCode) returns error? {
+    string buildGradlePath = string `${ballerinaDir}/build.gradle`;
+    boolean buildExists = check file:test(buildGradlePath, file:EXISTS);
+    if !buildExists {
+        return;
+    }
 
-tasks.withType(JavaCompile) {
-    options.encoding = 'UTF-8'
-    options.compilerArgs = ['-source', '21', '-target', '21']
+    string? sdkVersion = inferSdkVersionFromRootDir(rootDir);
+    string? sdkArtifact = inferSdkArtifactFromRootDir(rootDir);
+    string? sdkGroupId = inferSdkGroupIdFromImports(javaAdaptorCode, sdkArtifact);
+
+    if !(sdkGroupId is string && sdkArtifact is string && sdkVersion is string) {
+        return;
+    }
+
+    string propName = deriveSdkVersionPropertyName(<string>sdkArtifact);
+    string content = check io:fileReadString(buildGradlePath);
+    boolean changed = false;
+
+    string? packageName = readValueFromBallerinaGradle(ballerinaDir, "packageName");
+
+    if !content.includes(string `name: '${sdkArtifact}'`) {
+        string externalJarsLine = "    externalJars(group: '" + <string>sdkGroupId + "', name: '" + <string>sdkArtifact + "', version: \"${" + propName + "}\") {\n    }";
+        int? depsStart = content.indexOf("dependencies {");
+        if depsStart is int {
+            int? depsEnd = content.indexOf("\n}", <int>depsStart);
+            if depsEnd is int {
+                content = content.substring(0, <int>depsEnd)
+                    + string `
+${externalJarsLine}
+`
+                    + content.substring(<int>depsEnd);
+                changed = true;
+            }
+        }
+    }
+
+    if packageName is string {
+        int? lastDot = (<string>packageName).lastIndexOf(".");
+        string packagePrefix = lastDot is int ? (<string>packageName).substring(0, <int>lastDot) : <string>packageName;
+        string sdkVersionPlaceholder = string `@${packagePrefix}.sdk.version@`;
+        string tomlAssignLine = "        ballerinaTomlFile.text = newBallerinaToml";
+        if !content.includes(string `newBallerinaToml.replace("${sdkVersionPlaceholder}"`) && content.includes(tomlAssignLine) {
+            content = content.substring(0, <int>content.indexOf(tomlAssignLine))
+                + string `        newBallerinaToml = newBallerinaToml.replace("${sdkVersionPlaceholder}", project.${propName})
+`
+                + content.substring(<int>content.indexOf(tomlAssignLine));
+            changed = true;
+        }
+    }
+
+    if changed {
+        check io:fileWriteString(buildGradlePath, content);
+    }
 }
 
-dependencies {
-${dependencyLines}}
+function readValueFromBallerinaGradle(string ballerinaDir, string varName) returns string? {
+    string buildGradlePath = string `${ballerinaDir}/build.gradle`;
+    string|error content = io:fileReadString(buildGradlePath);
+    if content is error {
+        return;
+    }
+    string pattern = string `def ${varName} = "`;
+    int? idx = (<string>content).indexOf(pattern);
+    if !(idx is int) {
+        return;
+    }
+    int valueStart = <int>idx + pattern.length();
+    int? quoteEnd = (<string>content).indexOf("\"", valueStart);
+    if !(quoteEnd is int) {
+        return;
+    }
+    return (<string>content).substring(valueStart, <int>quoteEnd);
+}
 
-jar {
-    manifest {
-        attributes 'Implementation-Title': 'generated-native-adaptor'
+function deriveSdkVersionPropertyName(string artifactId) returns string {
+    return string `${artifactId}SdkVersion`;
+}
+
+function ensureGradleProperty(string rootDir, string propKey, string propValue) returns error? {
+    string propsPath = string `${rootDir}/gradle.properties`;
+
+    boolean exists = check file:test(propsPath, file:EXISTS);
+    if !exists {
+        check io:fileWriteString(propsPath, string `${propKey}=${propValue}\n`);
+        return;
     }
-    if (project.gradle.gradleVersion.tokenize('.')[0].toInteger() >= 5) {
-        archiveFileName = 'generated-native-adaptor.jar'
-    } else {
-        archiveName = 'generated-native-adaptor.jar'
+
+    string content = check io:fileReadString(propsPath);
+    if content.includes(string `${propKey}=`) {
+        return;
     }
-    from {
-        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+
+    check io:fileWriteString(propsPath, content.trim() + string `
+${propKey}=${propValue}
+`);
+}
+
+function inferSdkInfoFromSpecDir(string rootDir) returns record {|string artifact; string 'version;|}? {
+    string specDir = string `${rootDir}/docs/spec`;
+    boolean|error specExists = file:test(specDir, file:EXISTS);
+    if !(specExists is boolean && specExists) {
+        return;
     }
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}`;
+    file:MetaData[]|error entries = file:readDir(specDir);
+    if entries is error {
+        return;
+    }
+    string suffix = "-metadata.json";
+    foreach file:MetaData entry in entries {
+        if !entry.dir && entry.absPath.endsWith(suffix) {
+            int? lastSlash = entry.absPath.lastIndexOf("/");
+            string fileName = lastSlash is int ? entry.absPath.substring(<int>lastSlash + 1) : entry.absPath;
+            string stem = fileName.substring(0, fileName.length() - suffix.length());
+            string[] parts = splitOnChar(stem, "-");
+            foreach int i in 0 ..< parts.length() {
+                if isLikelyVersion(parts[i]) && i > 0 {
+                    string artifact = string:'join("-", ...parts.slice(0, i));
+                    string ver = string:'join("-", ...parts.slice(i));
+                    return {artifact: artifact, 'version: ver};
+                }
+            }
+        }
+    }
+    return;
+}
+
+// Split a string on a single-character delimiter without requiring a regex import.
+function splitOnChar(string value, string delimiter) returns string[] {
+    string[] parts = [];
+    string remaining = value;
+    while true {
+        int? idx = remaining.indexOf(delimiter);
+        if !(idx is int) {
+            parts.push(remaining);
+            break;
+        }
+        parts.push(remaining.substring(0, <int>idx));
+        remaining = remaining.substring(<int>idx + 1);
+    }
+    return parts;
 }
 
 function inferSdkArtifactFromRootDir(string rootDir) returns string? {
-    int? slashIndex = rootDir.lastIndexOf("/");
-    string dirName = slashIndex is int ? rootDir.substring(<int>slashIndex + 1) : rootDir;
-
+    // Primary: read from metadata filename in docs/spec/
+    record {|string artifact; string 'version;|}? specInfo = inferSdkInfoFromSpecDir(rootDir);
+    if specInfo is record {|string artifact; string 'version;|} {
+        return specInfo.artifact;
+    }
+    string resolvedRootDir = rootDir.endsWith("/native") ? rootDir.substring(0, rootDir.length() - 7) : rootDir;
+    int? slashIndex = resolvedRootDir.lastIndexOf("/");
+    string dirName = slashIndex is int ? resolvedRootDir.substring(<int>slashIndex + 1) : resolvedRootDir;
     int? dashIndex = dirName.lastIndexOf("-");
     if !(dashIndex is int) || dashIndex <= 0 {
         return;
     }
-
-    return dirName.substring(0, <int>dashIndex);
+    string versionCandidate = dirName.substring(<int>dashIndex + 1);
+    if isLikelyVersion(versionCandidate) {
+        return dirName.substring(0, <int>dashIndex);
+    }
+    return;
 }
 
 function inferSdkGroupIdFromImports(string javaAdaptorCode, string? sdkArtifact) returns string? {
@@ -288,20 +417,20 @@ function firstSegments(string value, int count) returns string {
 }
 
 function inferSdkVersionFromRootDir(string rootDir) returns string? {
-    int? slashIndex = rootDir.lastIndexOf("/");
-    string dirName = slashIndex is int ? rootDir.substring(<int>slashIndex + 1) : rootDir;
-
+    // Primary: read from metadata filename in docs/spec/
+    record {|string artifact; string 'version;|}? specInfo = inferSdkInfoFromSpecDir(rootDir);
+    if specInfo is record {|string artifact; string 'version;|} {
+        return specInfo.'version;
+    }
+    string resolvedRootDir = rootDir.endsWith("/native") ? rootDir.substring(0, rootDir.length() - 7) : rootDir;
+    int? slashIndex = resolvedRootDir.lastIndexOf("/");
+    string dirName = slashIndex is int ? resolvedRootDir.substring(<int>slashIndex + 1) : resolvedRootDir;
     int? dashIndex = dirName.lastIndexOf("-");
     if !(dashIndex is int) || dashIndex <= 0 || (<int>dashIndex + 1) >= dirName.length() {
         return;
     }
-
-    string version = dirName.substring(<int>dashIndex + 1);
-    if isLikelyVersion(version) {
-        return version;
-    }
-
-    return;
+    string ver = dirName.substring(<int>dashIndex + 1);
+    return isLikelyVersion(ver) ? ver : ();
 }
 
 function containsStringValue(string[] items, string expected) returns boolean {
@@ -310,7 +439,6 @@ function containsStringValue(string[] items, string expected) returns boolean {
             return true;
         }
     }
-
     return false;
 }
 
@@ -318,68 +446,72 @@ function isLikelyVersion(string value) returns boolean {
     if value.length() == 0 {
         return false;
     }
-
     foreach int i in 0 ..< value.length() {
         string ch = value.substring(i, i + 1);
         if !"0123456789.".includes(ch) {
             return false;
         }
     }
-
     return true;
 }
 
-function ensureBallerinaPackageFiles(string ballerinaDir) returns error? {
-    string tomlPath = string `${ballerinaDir}/Ballerina.toml`;
-    string readmePath = string `${ballerinaDir}/README.md`;
-    check ensureGeneratedConnectorReadme(readmePath);
-    boolean tomlExists = check file:test(tomlPath, file:EXISTS);
-    if !tomlExists {
-        string ballerinaToml = string `[package]
-org = "generated"
-name = "connector"
-version = "0.1.0"
-distribution = "2201.13.1"
-
-[dependencies]
-"ballerina/jballerina.java" = "0.0.0"
-
-[[platform.java21.dependency]]
-path = "../build/libs/generated-native-adaptor.jar"
-`;
-        check io:fileWriteString(tomlPath, ballerinaToml);
+function deriveJavaFqClassName(string filePath) returns string? {
+    string marker = "src/main/java/";
+    int? markerIdx = filePath.indexOf(marker);
+    if !(markerIdx is int) {
         return;
     }
-
-    string existingToml = check io:fileReadString(tomlPath);
-    boolean hasJavaDep = existingToml.includes("\"ballerina/jballerina.java\"");
-    boolean hasPlatformDep = existingToml.includes("[[platform.java21.dependency]]") &&
-        existingToml.includes("../build/libs/");
-
-    if hasJavaDep && hasPlatformDep {
-        return;
+    string relative = filePath.substring(<int>markerIdx + marker.length());
+    if relative.endsWith(".java") {
+        relative = relative.substring(0, relative.length() - 5);
     }
-
-    string updatedToml = existingToml.trim();
-    if !hasJavaDep {
-        if !updatedToml.includes("[dependencies]") {
-            updatedToml += "\n\n[dependencies]\n";
-        }
-        updatedToml += "\n\"ballerina/jballerina.java\" = \"0.0.0\"\n";
+    // Replace all path separators with dots
+    string fq = "";
+    foreach int i in 0 ..< relative.length() {
+        string ch = relative.substring(i, i + 1);
+        fq = fq + (ch == "/" ? "." : ch);
     }
-
-    if !hasPlatformDep {
-        updatedToml += "\n[[platform.java21.dependency]]\n";
-        updatedToml += "path = \"../build/libs/generated-native-adaptor.jar\"\n";
-    }
-
-    check io:fileWriteString(tomlPath, updatedToml + "\n");
+    return fq.length() > 0 ? fq : ();
 }
 
-function ensureGeneratedConnectorReadme(string readmePath) returns error? {
-    boolean readmeExists = check file:test(readmePath, file:EXISTS);
-    if !readmeExists {
-        string defaultReadme = "# Generated Connector\n\nThis package is auto-generated by connector automation.\n";
-        check io:fileWriteString(readmePath, defaultReadme);
+function fixJavaMethodClassReferences(string clientCode, string fqClassName) returns string {
+    string result = "";
+    string remaining = clientCode;
+    string classPrefix = "'class: \"";
+    while true {
+        int? prefixIdx = remaining.indexOf(classPrefix);
+        if !(prefixIdx is int) {
+            result = result + remaining;
+            break;
+        }
+        int valueStart = <int>prefixIdx + classPrefix.length();
+        int? quoteEnd = remaining.indexOf("\"", valueStart);
+        if !(quoteEnd is int) {
+            result = result + remaining;
+            break;
+        }
+        result = result + remaining.substring(0, valueStart) + fqClassName;
+        remaining = remaining.substring(<int>quoteEnd);
     }
+    return result;
+}
+
+function fixJavaPackageDeclaration(string javaCode, string fqClassName) returns string {
+    int? lastDot = fqClassName.lastIndexOf(".");
+    if !(lastDot is int) {
+        return javaCode;
+    }
+    string correctPackage = fqClassName.substring(0, <int>lastDot);
+    string packageKeyword = "package ";
+    int? pkgIdx = javaCode.indexOf(packageKeyword);
+    if !(pkgIdx is int) {
+        return javaCode;
+    }
+    int? semiIdx = javaCode.indexOf(";", <int>pkgIdx);
+    if !(semiIdx is int) {
+        return javaCode;
+    }
+    return javaCode.substring(0, <int>pkgIdx + packageKeyword.length())
+        + correctPackage
+        + javaCode.substring(<int>semiIdx);
 }

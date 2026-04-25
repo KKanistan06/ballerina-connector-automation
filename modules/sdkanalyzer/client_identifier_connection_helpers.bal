@@ -14,6 +14,7 @@
 // under the License.
 
 import ballerina/io;
+import ballerina/log;
 import ballerina/os;
 
 # Check if a type name is a primitive or standard Java type
@@ -45,23 +46,108 @@ function isStandardJavaType(string typeName) returns boolean {
 # + dependencyJarPaths - Paths to dependency JARs for resolving external classes
 # + return - The ClassInfo if found, otherwise ()
 function findOrResolveClass(string className, ClassInfo[] resolvedClasses, string[] dependencyJarPaths) returns ClassInfo? {
+    log:printDebug("Looking up class", className = className, resolvedCount = resolvedClasses.length(), depJarCount = dependencyJarPaths.length());
+    string[] candidates = normalizeCandidateTypeNames(className);
+    if candidates.length() == 0 {
+        candidates.push(className);
+    }
+
     // First try to find in already-resolved classes
-    ClassInfo? found = findClassByName(className, resolvedClasses);
-    if found is ClassInfo {
-        return found;
+    foreach string candidate in candidates {
+        string[] lookupCandidates = buildLookupCandidates(candidate);
+        foreach string lookupCandidate in lookupCandidates {
+            if lookupCandidate == "" {
+                continue;
+            }
+
+            ClassInfo? found = findClassByName(lookupCandidate, resolvedClasses);
+            if found is ClassInfo {
+                log:printDebug("Class found in resolved cache", className = found.className);
+                return found;
+            }
+        }
     }
 
     // Try to resolve from dependency JARs
     if dependencyJarPaths.length() > 0 {
-        ClassInfo? resolved = resolveClassFromJars(className, dependencyJarPaths);
-        if resolved is ClassInfo {
-            // Add to resolved classes for future lookups
-            resolvedClasses.push(resolved);
-            return resolved;
+        log:printDebug("Class not in cache, searching dependency JARs", className = className, jarCount = dependencyJarPaths.length());
+        foreach string candidate in candidates {
+            string[] lookupCandidates = buildLookupCandidates(candidate);
+            foreach string lookupCandidate in lookupCandidates {
+                if lookupCandidate == "" {
+                    continue;
+                }
+
+                ClassInfo? resolved = resolveClassFromJars(lookupCandidate, dependencyJarPaths);
+                if resolved is ClassInfo {
+                    // Add to resolved classes for future lookups
+                    boolean alreadyResolved = false;
+                    foreach ClassInfo cls in resolvedClasses {
+                        if cls.className == resolved.className {
+                            alreadyResolved = true;
+                            break;
+                        }
+                    }
+
+                    if !alreadyResolved {
+                        resolvedClasses.push(resolved);
+                    }
+
+                    log:printInfo("Type resolved from external dependency JAR", className = resolved.className);
+                    return resolved;
+                }
+            }
         }
     }
 
+    log:printDebug("Class not found anywhere", className = className);
     return ();
+}
+
+function buildLookupCandidates(string rawTypeName) returns string[] {
+    string[] out = [];
+    string candidate = rawTypeName.trim();
+
+    if candidate == "" {
+        return out;
+    }
+
+    out.push(candidate);
+
+    if candidate.startsWith("? extends ") {
+        out.push(candidate.substring(10));
+    } else if candidate.startsWith("? super ") {
+        out.push(candidate.substring(8));
+    }
+
+    int? angleStart = candidate.indexOf("<");
+    if angleStart is int && angleStart > 0 {
+        out.push(candidate.substring(0, angleStart));
+        string? genericType = extractGenericTypeParameter(candidate);
+        if genericType is string {
+            out.push(genericType);
+        }
+    }
+
+    if candidate.endsWith("[]") && candidate.length() > 2 {
+        out.push(candidate.substring(0, candidate.length() - 2));
+    }
+
+    string[] uniq = [];
+    foreach string value in out {
+        string cleaned = value.trim();
+        if cleaned == "" || cleaned == "?" {
+            continue;
+        }
+        boolean present = uniq.some(function(string x) returns boolean {
+            return x == cleaned;
+        });
+        if !present {
+            uniq.push(cleaned);
+        }
+    }
+
+    return uniq;
 }
 
 # Extract enum constants from an enum class
@@ -72,9 +158,7 @@ function extractEnumConstants(ClassInfo enumClass) returns RequestFieldInfo[] {
     RequestFieldInfo[] constants = [];
 
     foreach FieldInfo fld in enumClass.fields {
-        // Enum constants are static final fields of the enum type itself
         if fld.isStatic && fld.isFinal {
-            // Skip internal fields like $VALUES, UNKNOWN_TO_SDK_VERSION, etc.
             if fld.name.startsWith("$") || fld.name == "UNKNOWN_TO_SDK_VERSION" {
                 continue;
             }
@@ -86,7 +170,6 @@ function extractEnumConstants(ClassInfo enumClass) returns RequestFieldInfo[] {
                 isRequired: false
             };
 
-            // Add javadoc description if available
             if fld.javadoc != () {
                 constInfo.description = fld.javadoc;
             }
@@ -208,8 +291,6 @@ function enrichConnectionFieldsWithLLM(
         return [fields, syntheticMeta];
     }
 
-    // Only enrich fields that could not be resolved from classes/JARs.
-    // Resolved fields already have deterministic metadata and should not generate synthetic type metadata.
     ConnectionFieldInfo[] llmCandidates = [];
     foreach ConnectionFieldInfo f in fields {
         string level1Context = "";
@@ -286,7 +367,6 @@ function enrichConnectionFieldsWithLLM(
 
     json[] llmEntries = <json[]>parsed;
 
-    // Build lookup: field name → LLM entry
     map<map<json>> enrichmentMap = {};
     foreach json entry in llmEntries {
         if entry is map<json> {
@@ -383,7 +463,6 @@ function enrichConnectionFieldsWithLLM(
                 enumValues: syntheticEnumValues,
                 subFields: []
             };
-            // De-duplicate synthetic entries
             boolean alreadyAdded = false;
             foreach SyntheticTypeMetadata existing in syntheticMeta {
                 if existing.fullType == enumRefKey {
@@ -448,7 +527,8 @@ function enrichConnectionFieldsWithLLM(
             memberReference: f.memberReference,
             typeReference: newTypeRef,
             description: newDesc,
-            level1Context: f.level1Context
+            level1Context: f.level1Context,
+            interfaceImplementations: f.interfaceImplementations
         };
 
         result.push(enriched);
@@ -458,4 +538,50 @@ function enrichConnectionFieldsWithLLM(
     printConnectionEnrichLog(string `Enriched ${enrichedCount}/${llmCandidates.length()} unresolved fields; ` +
                 string `${syntheticMeta.length()} synthetic type entries generated`);
     return [result, syntheticMeta];
+}
+
+# Build a context string summarising concrete implementations of an interface-typed field.
+#
+# + implClasses - Concrete (non-abstract, non-interface) implementing classes, up to 3
+# + return - Multi-line context string, one line per implementation
+function buildInterfaceImplementationsContext(ClassInfo[] implClasses) returns string {
+    if implClasses.length() == 0 {
+        return "";
+    }
+    string[] parts = [];
+    parts.push(string `Interface with ${implClasses.length()} implementation(s):`);
+    foreach ClassInfo impl in implClasses {
+        string simpleName = extractSimpleTypeName(impl.className);
+        string[] fieldDescs = [];
+        foreach FieldInfo fld in impl.fields {
+            if fld.isStatic || fld.name.startsWith("$") || fld.name.startsWith("_") {
+                continue;
+            }
+            string fldSimple = extractSimpleTypeName(fld.typeName);
+            fieldDescs.push(string `${fld.name}:${fldSimple}`);
+            if fieldDescs.length() >= 5 {
+                break;
+            }
+        }
+        if fieldDescs.length() > 0 {
+            parts.push(string `  ${simpleName}: [${string:'join(", ", ...fieldDescs)}]`);
+        } else {
+            // Fallback: constructor parameter names
+            string[] ctorParams = [];
+            foreach MethodInfo m in impl.methods {
+                if m.name == "<init>" && m.parameters.length() > 0 {
+                    foreach ParameterInfo p in m.parameters {
+                        ctorParams.push(p.name);
+                    }
+                    break;
+                }
+            }
+            if ctorParams.length() > 0 {
+                parts.push(string `  ${simpleName}: [${string:'join(", ", ...ctorParams)}]`);
+            } else {
+                parts.push(string `  ${simpleName}`);
+            }
+        }
+    }
+    return string:'join("\n", ...parts);
 }

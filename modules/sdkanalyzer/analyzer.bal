@@ -69,7 +69,6 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
         }
     }
 
-    // Write the full list of extracted classes to a file for easier inspection
     check writeClassList(outputDir, rawClasses);
 
     // Step 4: Filter relevant classes for client identification
@@ -122,7 +121,8 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     // Step 7: Extract public methods from root client
     printAnalyzerStep(4, "Extracting and ranking methods", config.quietMode);
 
-    MethodInfo[] publicMethods = extractPublicMethods(rootClient);
+    // Pass rawClasses so delegate traversal can resolve sub-client return types
+    MethodInfo[] publicMethods = extractPublicMethods(rootClient, rawClasses);
     int totalPublicMethods = publicMethods.length();
 
     if !config.quietMode {
@@ -130,7 +130,6 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     }
 
     // Step 8: Rank methods by usage using LLM
-
     MethodInfo[]|AnalyzerError rankedResult = rankMethodsByUsageWithLLM(publicMethods);
     if rankedResult is AnalyzerError {
         return rankedResult;
@@ -144,8 +143,7 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
     // Step 9: Generate structured metadata
     printAnalyzerStep(5, "Generating metadata", config.quietMode);
 
-    // Pass the full set of extracted classes so enum types and other supporting
-    // classes can be resolved when generating structured metadata.
+    // Pass the full set of extracted classes
     StructuredSDKMetadata structuredMetadata = generateStructuredMetadata(
             rootClient,
             clientInitPattern,
@@ -301,38 +299,21 @@ function createAnalyzerSeparator(string char, int length) returns string {
 # + cls - ClassInfo to evaluate
 # + return - true if relevant, false otherwise
 function isRelevantClientClass(ClassInfo cls) returns boolean {
-    // Skip enums
-    if cls.isEnum {
+
+    string packageNameLower = cls.packageName.toLowerAscii();
+
+    // Model packages contain DTOs, not clients
+    if packageNameLower == "model" || packageNameLower.endsWith(".model") || packageNameLower.includes(".model.") {
         return false;
     }
 
-    // Skip abstract classes (but allow interfaces even if they are marked abstract)
-    if cls.isAbstract && !cls.isInterface {
+    // Internal and implementation packages are never root client candidates.
+    if packageNameLower.includes(".internal.") || packageNameLower.includes(".impl.") ||
+        packageNameLower.endsWith(".internal") || packageNameLower.endsWith(".impl") {
         return false;
     }
 
-    // Skip inner classes and anonymous classes
-    if cls.className.includes("$") {
-        return false;
-    }
-
-    // Skip test classes
-    string[] testPatterns = ["Test", "test", "Mock", "mock", "Stub", "stub"];
-    foreach string pattern in testPatterns {
-        if cls.simpleName.includes(pattern) {
-            return false;
-        }
-    }
-
-    // Include classes with many public methods
-    int publicMethodCount = 0;
-    foreach MethodInfo method in cls.methods {
-        if !method.isStatic && !method.isAbstract {
-            publicMethodCount += 1;
-        }
-    }
-
-    return publicMethodCount > 5;
+    return true;
 }
 
 # Detect the client initialization pattern from constructors
@@ -456,10 +437,8 @@ function extractDatasetKeyFromJarPath(string jarPath) returns string {
 # + config - Analyzer configuration (e.g., javadocPath) to pass to the Java interop layer
 # + return - Array of ClassInfo or error
 public function analyzeJarWithJavaParserWrapper(string jarPath, AnalyzerConfig config) returns ClassInfo[]|AnalyzerError {
-    // Call into the jar parser which wraps the Java interop implementation.
     ClassInfo[]|error res = parseJarFromReference(jarPath, config);
     if res is error {
-        // Convert generic error to AnalyzerError alias
         return <AnalyzerError>res;
     }
     return res;
@@ -469,7 +448,7 @@ public function analyzeJarWithJavaParserWrapper(string jarPath, AnalyzerConfig c
 # This is useful for resolving external classes from dependency JARs.
 #
 # + jarPath - Path to JAR file  
-# + config - Analyzer configuration (e.g., javadocPath) to pass to the Java interop layer
+# + config - Analyzer configuration to pass to the Java interop layer
 # + return - ParsedJarResult containing classes and dependency paths, or error
 public function analyzeJarWithDependencies(string jarPath, AnalyzerConfig config) returns ParsedJarResult|AnalyzerError {
     ParsedJarResult|error res = parseJarWithDependencies(jarPath, config);
@@ -488,11 +467,8 @@ public function analyzeJarWithDependencies(string jarPath, AnalyzerConfig config
 function writeStructuredMetadata(StructuredSDKMetadata metadata, string outputDir, string sdkSimpleName = "sdk") returns error? {
     string metadataOutputDir = outputDir;
     string path = string `${metadataOutputDir}/${sdkSimpleName}-metadata.json`;
-    // Convert the typed record to a JSON value and write to file
     json j = metadata;
-    // Pretty-print JSON to ensure valid, well-formatted output
     string content = prettyPrintJson(j, 0);
-    // Ensure metadata output directory exists (createDir is safe if already exists)
     boolean ok = check file:test(metadataOutputDir, file:EXISTS);
     if !ok {
         check file:createDir(metadataOutputDir, file:RECURSIVE);
@@ -568,18 +544,16 @@ function prettyPrintJson(json v, int indent) returns string {
             return "{}";
         }
 
-        // Filter out keys with null values that should be omitted
         string[] filteredKeys = [];
-        string[] omitIfNullKeys = ["enumReference", "memberReference"];
         foreach string k in keys {
             json val = m[k];
             boolean shouldOmit = false;
             if val is () {
-                foreach string omitKey in omitIfNullKeys {
-                    if k == omitKey {
-                        shouldOmit = true;
-                        break;
-                    }
+                shouldOmit = true;
+            } else if val is json[] {
+                json[] arr = <json[]>val;
+                if arr.length() == 0 {
+                    shouldOmit = true;
                 }
             }
             if !shouldOmit {

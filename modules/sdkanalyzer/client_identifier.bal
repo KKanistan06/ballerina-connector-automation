@@ -14,6 +14,7 @@
 // under the License.
 
 import ballerina/io;
+import ballerina/log;
 import ballerina/os;
 import ballerina/regex;
 
@@ -135,9 +136,15 @@ public function detectClientInitPatternWithLLM(
 
 # Extract all public methods from root client class
 #
+# Extract all public methods from the root client class.
+# When the root client exposes very few direct methods but delegates operations to a
+# related sub-client class (e.g., via a resource accessor returning an inner class),
+# this function traverses one level of delegation to collect the actual API operations.
+#
 # + rootClient - The root client class
+# + allClasses - All available classes, used for delegate traversal (pass [] to skip)
 # + return - All public methods with metadata
-public function extractPublicMethods(ClassInfo rootClient) returns MethodInfo[] {
+public function extractPublicMethods(ClassInfo rootClient, ClassInfo[] allClasses) returns MethodInfo[] {
     MethodInfo[] publicMethods = [];
 
     foreach MethodInfo method in rootClient.methods {
@@ -150,6 +157,196 @@ public function extractPublicMethods(ClassInfo rootClient) returns MethodInfo[] 
             }
             publicMethods.push(method);
         }
+    }
+
+    // Delegate traversal: when the root client exposes few direct methods but delegates to
+    // related inner/sub-resource classes, collect methods from those classes recursively.
+    // This handles SDK structures like:
+    //   - AWS:    S3Client → operations directly on root
+    //   - Google: Forms → FormsOperations → Responses/Watches → get/list/create...
+    // The traversal recurses through classes that are related (same package or inner classes
+    // of the root client) and only returns "leaf" methods — methods whose return types are
+    // NOT themselves sub-resource accessor classes within the same family.
+    if publicMethods.length() <= 5 && allClasses.length() > 0 {
+        map<boolean> visitedClasses = {};
+        visitedClasses[rootClient.className] = true;
+        map<boolean> addedMethodKeys = {};
+
+        // Seed the queue with return types of the root client's methods
+        string[] classQueue = [];
+        foreach MethodInfo method in publicMethods {
+            string returnType = method.returnType;
+            if returnType == "void" || isSimpleType(returnType) {
+                continue;
+            }
+            if !visitedClasses.hasKey(returnType) {
+                classQueue.push(returnType);
+            }
+        }
+
+        MethodInfo[] delegateMethods = [];
+        int qi = 0;
+        // Limit traversal depth to avoid runaway expansion
+        int maxTraversals = 50;
+        int traversals = 0;
+
+        while qi < classQueue.length() && traversals < maxTraversals {
+            string currentType = classQueue[qi];
+            qi += 1;
+            if visitedClasses.hasKey(currentType) {
+                continue;
+            }
+            visitedClasses[currentType] = true;
+            traversals += 1;
+
+            ClassInfo? delegateClass = findClassByName(currentType, allClasses);
+            if delegateClass is () || delegateClass.className == rootClient.className {
+                continue;
+            }
+            // Only traverse closely related classes (same package or inner class of root)
+            boolean isRelated =
+                delegateClass.packageName == rootClient.packageName ||
+                delegateClass.className.startsWith(rootClient.className + "$");
+            if !isRelated {
+                continue;
+            }
+
+            foreach MethodInfo dm in delegateClass.methods {
+                if dm.name.startsWith("<") || dm.isStatic ||
+                    dm.name == "toString" || dm.name == "hashCode" ||
+                    dm.name == "equals" || dm.name == "set" || dm.name == "clone" {
+                    continue;
+                }
+                // If the method returns another related inner class, it's a sub-resource
+                // accessor — enqueue it for further traversal rather than surfacing it
+                // as a leaf operation.
+                string dmReturnType = dm.returnType;
+                ClassInfo? retClass = findClassByName(dmReturnType, allClasses);
+                boolean isSubResourceAccessor = false;
+                if retClass is ClassInfo {
+                    boolean retIsRelated =
+                        retClass.packageName == rootClient.packageName ||
+                        retClass.className.startsWith(rootClient.className + "$");
+                    // A sub-resource accessor returns a class that itself has non-trivial
+                    // methods and takes no parameters (or just a parent reference).
+                    if retIsRelated && dm.parameters.length() == 0 && retClass.methods.length() > 1 {
+                        isSubResourceAccessor = true;
+                        if !visitedClasses.hasKey(dmReturnType) {
+                            classQueue.push(dmReturnType);
+                        }
+                    }
+                }
+                if isSubResourceAccessor {
+                    continue;
+                }
+
+                // Build a unique key using name + parameter types + return type to distinguish
+                // methods from different delegate classes. Without the return type, operations
+                // like responses.list(String)->ListFormResponsesResponse and
+                // watches.list(String)->ListWatchesResponse would collide.
+                string paramSig = "";
+                foreach ParameterInfo p in dm.parameters {
+                    paramSig += "|" + p.typeName;
+                }
+                string methodKey = dm.name + paramSig + "->" + dm.returnType;
+                if addedMethodKeys.hasKey(methodKey) {
+                    continue;
+                }
+                addedMethodKeys[methodKey] = true;
+                delegateMethods.push(dm);
+            }
+        }
+
+        // Infer meaningful parameter names for delegate methods whose parameters have
+        // generic names (e.g., "string", "arg0"). Many SDKs store path/query parameters as
+        // private instance fields in the operation class returned by the method.  When the
+        // return type is a known inner class, extract its non-static instance field names
+        // that match the parameter types and count, then apply them.
+        foreach MethodInfo dm in delegateMethods {
+            boolean needsRename = false;
+            foreach ParameterInfo p in dm.parameters {
+                string pNameLower = p.name.toLowerAscii();
+                // Check if parameter name is just a type name or a numbered arg
+                if pNameLower == extractSimpleTypeName(p.typeName).toLowerAscii() ||
+                    pNameLower.startsWith("arg") {
+                    needsRename = true;
+                    break;
+                }
+            }
+            if needsRename && dm.parameters.length() > 0 {
+                ClassInfo? opClass = findClassByName(dm.returnType, allClasses);
+                if opClass is ClassInfo {
+                    // Collect non-static instance fields from the operation class.
+                    // The first N fields that type-match the method parameters (positionally)
+                    // are assumed to be the path/required parameters.
+                    FieldInfo[] instanceFields = [];
+                    foreach FieldInfo fld in opClass.fields {
+                        if fld.isStatic {
+                            continue;
+                        }
+                        instanceFields.push(fld);
+                    }
+                    // Match positionally: for each method parameter, pick the next instance
+                    // field whose type matches. This handles cases where the operation class
+                    // has more fields than the method has parameters.
+                    ParameterInfo[] renamedParams = [];
+                    int fi = 0;
+                    boolean allMatched = true;
+                    foreach ParameterInfo p in dm.parameters {
+                        boolean matched = false;
+                        while fi < instanceFields.length() {
+                            FieldInfo candidate = instanceFields[fi];
+                            fi += 1;
+                            string paramSimple = extractSimpleTypeName(p.typeName).toLowerAscii();
+                            string fieldSimple = extractSimpleTypeName(candidate.typeName).toLowerAscii();
+                            if paramSimple == fieldSimple {
+                                renamedParams.push({
+                                    name: candidate.name,
+                                    typeName: p.typeName,
+                                    requestFields: p.requestFields
+                                });
+                                matched = true;
+                                break;
+                            }
+                        }
+                        if !matched {
+                            allMatched = false;
+                            break;
+                        }
+                    }
+                    if allMatched && renamedParams.length() == dm.parameters.length() {
+                        dm.parameters = renamedParams;
+                    } else if renamedParams.length() > 0 {
+                        // Partial match: rename only the parameters we successfully matched,
+                        // keeping original names for the rest.
+                        ParameterInfo[] merged = [];
+                        int ri = 0;
+                        foreach ParameterInfo p in dm.parameters {
+                            if ri < renamedParams.length() {
+                                merged.push(renamedParams[ri]);
+                                ri += 1;
+                            } else {
+                                merged.push(p);
+                            }
+                        }
+                        dm.parameters = merged;
+                    }
+                }
+            }
+            publicMethods.push(dm);
+        }
+
+        // Remove the original accessor-only methods from publicMethods if their return
+        // type was traversed as a sub-resource (they are just navigation, not operations).
+        MethodInfo[] filtered = [];
+        foreach MethodInfo m in publicMethods {
+            if m.parameters.length() == 0 && visitedClasses.hasKey(m.returnType) &&
+                m.returnType != rootClient.className {
+                continue; // skip sub-resource accessor
+            }
+            filtered.push(m);
+        }
+        publicMethods = filtered;
     }
 
     return publicMethods;
@@ -183,7 +380,10 @@ public function rankMethodsByUsageWithLLM(MethodInfo[] methods) returns MethodIn
 public function extractParameterFieldTypes(MethodInfo[] methods, ClassInfo[] allClasses)
         returns MethodInfo[] {
 
-    // Deduplicate overloads preferring variants that resolve to a Request class
+    // Deduplicate overloads preferring variants that resolve to a Request class.
+    // Use a compound key (name + parameter count + return type) so that methods from
+    // different delegate sub-resources are treated as distinct operations even when
+    // they share the same name and arity (e.g., responses.list(String) vs watches.list(String)).
     map<MethodInfo> chosen = {};
     foreach MethodInfo method in methods {
         boolean hasRequestParam = false;
@@ -195,10 +395,11 @@ public function extractParameterFieldTypes(MethodInfo[] methods, ClassInfo[] all
             }
         }
 
-        if !chosen.hasKey(method.name) {
-            chosen[method.name] = method;
+        string dedupeKey = method.name + "#" + method.parameters.length().toString() + "#" + method.returnType;
+        if !chosen.hasKey(dedupeKey) {
+            chosen[dedupeKey] = method;
         } else {
-            MethodInfo? existing = chosen[method.name];
+            MethodInfo? existing = chosen[dedupeKey];
             if existing is MethodInfo {
                 boolean existingHasRequest = false;
                 foreach ParameterInfo p in existing.parameters {
@@ -209,7 +410,7 @@ public function extractParameterFieldTypes(MethodInfo[] methods, ClassInfo[] all
                     }
                 }
                 if !existingHasRequest && hasRequestParam {
-                    chosen[method.name] = method;
+                    chosen[dedupeKey] = method;
                 } else if existingHasRequest && hasRequestParam {
                     boolean existingDirect = false;
                     boolean currentDirect = false;
@@ -226,7 +427,7 @@ public function extractParameterFieldTypes(MethodInfo[] methods, ClassInfo[] all
                         }
                     }
                     if currentDirect && !existingDirect {
-                        chosen[method.name] = method;
+                        chosen[dedupeKey] = method;
                     }
                 }
             }
@@ -237,8 +438,9 @@ public function extractParameterFieldTypes(MethodInfo[] methods, ClassInfo[] all
     MethodInfo[] enhancedMethodsOrdered = [];
     map<boolean> added = {};
     foreach MethodInfo m in methods {
-        if !added.hasKey(m.name) {
-            MethodInfo? selOpt = chosen[m.name];
+        string mKey = m.name + "#" + m.parameters.length().toString() + "#" + m.returnType;
+        if !added.hasKey(mKey) {
+            MethodInfo? selOpt = chosen[mKey];
             if selOpt is MethodInfo {
                 MethodInfo sel = selOpt;
                 MethodInfo enhancedMethod = {
@@ -255,7 +457,7 @@ public function extractParameterFieldTypes(MethodInfo[] methods, ClassInfo[] all
                     signature: sel.signature
                 };
                 enhancedMethodsOrdered.push(enhancedMethod);
-                added[m.name] = true;
+                added[mKey] = true;
             }
         }
     }
@@ -368,6 +570,110 @@ public function generateStructuredMetadata(
         }
     }
 
+    // Step 2b: Determine required connection fields via LLM.
+    // Connection fields default to isRequired=false during builder traversal.
+    // Here we send all connection field names+types to the LLM in the same way
+    // request parameter fields are analyzed, so the spec accurately reflects
+    // which fields must be supplied for a basic client connection.
+    ConnectionFieldInfo[] updatedConnFields = initPattern.connectionFields;
+    map<map<boolean>> requiredConnMemberFieldsByClass = {};
+    if !config.disableLLM && initPattern.connectionFields.length() > 0 {
+        string connFieldList = "";
+        map<string> connFieldToMemberRef = {};
+        foreach ConnectionFieldInfo cf in initPattern.connectionFields {
+            connFieldList += string `  - ${cf.name}: ${cf.typeName}\n`;
+            if cf.memberReference is string {
+                string memberRef = <string>cf.memberReference;
+                connFieldToMemberRef[cf.name] = memberRef;
+
+                ClassInfo? memberClass = findClassByName(memberRef, allClasses);
+                if memberClass is () {
+                    memberClass = resolveClassFromJars(memberRef, dependencyJarPaths);
+                }
+                if memberClass is ClassInfo {
+                    RequestFieldInfo[] memberFields = extractClassAndAncestorFields(
+                        memberClass,
+                        allClasses,
+                        dependencyJarPaths
+                    );
+                    map<boolean> seenMemberNames = {};
+                    foreach RequestFieldInfo mf in memberFields {
+                        if seenMemberNames.hasKey(mf.name) {
+                            continue;
+                        }
+                        seenMemberNames[mf.name] = true;
+                        connFieldList += string `  - ${cf.name}.${mf.name}: ${mf.typeName}\n`;
+                    }
+                }
+            }
+        }
+        AnthropicConfiguration|error llmCfg2b = getAnthropicConfig();
+        if llmCfg2b is AnthropicConfiguration {
+            string sysPr2b = "You are an expert Java SDK analyzer. " +
+                "Identify which CONNECTION/CONFIGURATION fields are REQUIRED for a basic connection. " +
+                "Return ONLY valid JSON array of required field names: [\"field1\",\"field2\",\"field.member\"]";
+            string usrPr2b = string `For the client type '${initPattern.builderClass ?: "unknown"}',` +
+                string ` identify which of these connection configuration fields are REQUIRED. ` +
+                string `For member-reference entries, use dotted names like field.memberField:\n\n${connFieldList}\nReturn JSON array.`;
+            json|error llmResp2b = callAnthropicAPI(llmCfg2b, sysPr2b, usrPr2b);
+            if llmResp2b is json {
+                string respTxt2b = extractResponseText(llmResp2b);
+                string jTxt2b = respTxt2b.trim();
+                int? arrStart = jTxt2b.indexOf("[");
+                int? arrEnd = jTxt2b.lastIndexOf("]");
+                if arrStart is int && arrEnd is int && arrEnd > arrStart {
+                    jTxt2b = jTxt2b.substring(arrStart, arrEnd + 1);
+                }
+                json|error parsedArr = jTxt2b.fromJsonString();
+                if parsedArr is json[] {
+                    map<boolean> requiredConnFields = {};
+                    foreach json item in parsedArr {
+                        if item is string {
+                            string requiredName = item.trim();
+                            int? dotIdx = requiredName.indexOf(".");
+                            if dotIdx is int && dotIdx > 0 && dotIdx < requiredName.length() - 1 {
+                                string connFieldName = requiredName.substring(0, dotIdx);
+                                string memberFieldName = requiredName.substring(dotIdx + 1);
+                                string? memberRefOpt = connFieldToMemberRef[connFieldName];
+                                if memberRefOpt is string {
+                                    map<boolean> requiredMembers = {};
+                                    if requiredConnMemberFieldsByClass.hasKey(memberRefOpt) {
+                                        requiredMembers = requiredConnMemberFieldsByClass.get(memberRefOpt);
+                                    }
+                                    requiredMembers[memberFieldName] = true;
+                                    requiredConnMemberFieldsByClass[memberRefOpt] = requiredMembers;
+                                    requiredConnFields[connFieldName] = true;
+                                    continue;
+                                }
+                            }
+                            requiredConnFields[requiredName] = true;
+                        }
+                    }
+                    ConnectionFieldInfo[] rebuilt = [];
+                    foreach ConnectionFieldInfo cf in initPattern.connectionFields {
+                        ConnectionFieldInfo updated = cf;
+                        if requiredConnFields.hasKey(cf.name) {
+                            updated = {
+                                name: cf.name,
+                                typeName: cf.typeName,
+                                fullType: cf.fullType,
+                                isRequired: true,
+                                enumReference: cf.enumReference,
+                                memberReference: cf.memberReference,
+                                typeReference: cf.typeReference,
+                                description: cf.description,
+                                level1Context: cf.level1Context,
+                                interfaceImplementations: cf.interfaceImplementations
+                            };
+                        }
+                        rebuilt.push(updated);
+                    }
+                    updatedConnFields = rebuilt;
+                }
+            }
+        }
+    }
+
     // Step 3: Populate request fields using cached results
     MethodInfo[] methodsWithRequestFields = [];
     foreach int methodIdx in 0 ..< rankedMethods.length() {
@@ -452,6 +758,16 @@ public function generateStructuredMetadata(
                                 }
                             }
                         }
+                    } else if !isPrimitiveType(fieldInfo.fullType) && !isStandardJavaType(fieldInfo.fullType)
+                        && enhancedField.enumReference is () {
+                        // Non-primitive, non-collection, non-enum complex type — cache for member extraction
+                        ClassInfo? complexClass = findClassByName(fieldInfo.fullType, allClasses);
+                        if complexClass is ClassInfo {
+                            enhancedField.memberReference = fieldInfo.fullType;
+                            if !memberClassCache.hasKey(fieldInfo.fullType) {
+                                memberClassCache[fieldInfo.fullType] = complexClass;
+                            }
+                        }
                     }
 
                     enhancedFields.push(enhancedField);
@@ -478,6 +794,22 @@ public function generateStructuredMetadata(
         RequestFieldInfo[] returnFields = [];
         if updatedMethod.returnType != "void" && !isSimpleType(updatedMethod.returnType) {
             ClassInfo? retCls = findClassByName(updatedMethod.returnType, allClasses);
+
+            // If the return class extends a generic base (e.g., FormsRequest<Form>),
+            // resolve the actual model type from the generic type parameter and use it.
+            // This handles operation-wrapper classes that are not the data model themselves
+            // but carry the model type as a generic parameter of their superclass.
+            if retCls is ClassInfo && retCls.genericSuperClass.length() > 0 {
+                string? genParam = extractGenericTypeParameter(retCls.genericSuperClass);
+                if genParam is string && genParam.length() > 0 {
+                    ClassInfo? modelCls = findClassByName(genParam, allClasses);
+                    if modelCls is ClassInfo {
+                        retCls = modelCls;
+                        updatedMethod.returnType = modelCls.className;
+                    }
+                }
+            }
+
             if retCls is ClassInfo {
                 RequestFieldInfo[] rawReturnFields = extractResponseFields(retCls);
 
@@ -514,6 +846,16 @@ public function generateStructuredMetadata(
                                 }
                             }
                         }
+                    } else if !isPrimitiveType(rf.fullType) && !isStandardJavaType(rf.fullType)
+                        && enhancedRf.enumReference is () {
+                        // Non-primitive, non-collection, non-enum complex type — cache for member extraction
+                        ClassInfo? complexClass = findClassByName(rf.fullType, allClasses);
+                        if complexClass is ClassInfo {
+                            enhancedRf.memberReference = rf.fullType;
+                            if !memberClassCache.hasKey(rf.fullType) {
+                                memberClassCache[rf.fullType] = complexClass;
+                            }
+                        }
                     }
 
                     enhancedReturnFields.push(enhancedRf);
@@ -535,7 +877,9 @@ public function generateStructuredMetadata(
                 if enumClass is () {
                     enumClass = resolveClassFromJars(enumRef, dependencyJarPaths);
                 }
-                if enumClass is ClassInfo && enumClass.isEnum {
+                // Accept both Java enums and constant-holder classes (non-enum classes
+                // whose public static final fields are of their own type, e.g. Region).
+                if enumClass is ClassInfo && (enumClass.isEnum || hasEnumLikeConstants(enumClass)) {
                     enumCache[enumRef] = extractEnumMetadata(enumClass);
                 }
             }
@@ -560,7 +904,8 @@ public function generateStructuredMetadata(
             }
 
             if typeClass is ClassInfo {
-                if typeClass.isEnum {
+                // Accept both Java enums and constant-holder classes.
+                if typeClass.isEnum || hasEnumLikeConstants(typeClass) {
                     if !enumCache.hasKey(typeRef) {
                         enumCache[typeRef] = extractEnumMetadata(typeClass);
                     }
@@ -570,6 +915,111 @@ public function generateStructuredMetadata(
             }
         }
     }
+
+    // Discover concrete implementations of interface-/abstract-typed connection fields.
+    // When a field's type is an interface or abstract class, the user may supply any
+    // conforming implementation.  We scan allClasses AND dep JARs for concrete classes
+    // that implement or extend that type, then add them to memberClassCache so the
+    // spec generator can expose their fields as documentation.
+    // This is entirely generic: no SDK-specific knowledge is encoded here.
+    map<boolean> discoveredInterfaces = {}; // deduplicate per unique interface type (keyed by fullType)
+    foreach ConnectionFieldInfo connField in initPattern.connectionFields {
+        // Handle fields where concrete implementations were pre-discovered during builder traversal.
+        // These fields have typeReference intentionally cleared (so the empty interface class does
+        // not pollute memberClassCache), so they MUST be checked BEFORE the typeRef nil-guard below.
+        if connField.interfaceImplementations.length() > 0 {
+            string implKey = connField.fullType;
+            if !discoveredInterfaces.hasKey(implKey) {
+                discoveredInterfaces[implKey] = true;
+                foreach string implFqn in connField.interfaceImplementations {
+                    if isDisallowedConfigTypeClass(implFqn) || memberClassCache.hasKey(implFqn) {
+                        continue;
+                    }
+                    ClassInfo? preDiscoveredImpl = findClassByName(implFqn, allClasses);
+                    if preDiscoveredImpl is () {
+                        preDiscoveredImpl = resolveClassFromJars(implFqn, dependencyJarPaths);
+                    }
+                    if preDiscoveredImpl is ClassInfo {
+                        memberClassCache[implFqn] = preDiscoveredImpl;
+                        log:printInfo("Implementation added to memberClassCache",
+                            interfaceType = implKey, implClass = implFqn);
+                    } else {
+                        log:printInfo("Implementation not resolvable from JARs",
+                            interfaceType = implKey, implFqn = implFqn);
+                    }
+                }
+            }
+            continue; // skip Phase 1/2 JAR scan for this field
+        }
+
+        string? typeRef = connField.typeReference;
+        if typeRef is () || isDisallowedConfigTypeClass(typeRef) {
+            continue;
+        }
+        if discoveredInterfaces.hasKey(typeRef) {
+            continue; // already scanned this interface
+        }
+        discoveredInterfaces[typeRef] = true;
+
+        ClassInfo? ifaceClass = findClassByName(typeRef, allClasses);
+        if ifaceClass is () {
+            ifaceClass = resolveClassFromJars(typeRef, dependencyJarPaths);
+        }
+        if !(ifaceClass is ClassInfo) {
+            continue;
+        }
+        // Only expand interfaces and abstract classes — concrete types already resolved
+        if !ifaceClass.isInterface && !ifaceClass.isAbstract {
+            continue;
+        }
+        string ifaceFqn = ifaceClass.className;
+        string ifaceSimple = ifaceClass.simpleName;
+
+        // Phase 1: Scan already-loaded classes (main JAR + any lazily resolved dep classes)
+        foreach ClassInfo candidate in allClasses {
+            if candidate.isAbstract || candidate.isEnum {
+                continue;
+            }
+            if isDisallowedConfigTypeClass(candidate.className) {
+                continue;
+            }
+            if memberClassCache.hasKey(candidate.className) {
+                continue;
+            }
+            boolean isImpl = false;
+            foreach string iface in candidate.interfaces {
+                if iface == ifaceFqn || iface.endsWith("." + ifaceSimple) {
+                    isImpl = true;
+                    break;
+                }
+            }
+            if !isImpl {
+                string? sc = candidate.superClass;
+                if sc is string && (sc == ifaceFqn || sc.endsWith("." + ifaceSimple)) {
+                    isImpl = true;
+                }
+            }
+            if isImpl {
+                memberClassCache[candidate.className] = candidate;
+            }
+        }
+
+        // Phase 2: Scan dependency JAR files for implementations not loaded in allClasses.
+        // findImplementorsInJars uses metadata-only ASM parsing (no method bodies) so it
+        // is fast even over many JARs.
+        string[] depImplementors = findImplementorsInJars(ifaceFqn, dependencyJarPaths);
+        foreach string implName in depImplementors {
+            if isDisallowedConfigTypeClass(implName) || memberClassCache.hasKey(implName) {
+                continue;
+            }
+            ClassInfo? implClass = resolveClassFromJars(implName, dependencyJarPaths);
+            if implClass is ClassInfo {
+                memberClassCache[implName] = implClass;
+            }
+        }
+    }
+
+    map<boolean> connectionConfigScope = buildConnectionConfigScope(initPattern.connectionFields);
 
     // fill enum gaps with LLM-synthesized metadata
     foreach SyntheticTypeMetadata stm in initPattern.syntheticTypeMetadata {
@@ -589,8 +1039,29 @@ public function generateStructuredMetadata(
             memberClassCache,
             allClasses,
             dependencyJarPaths,
-            enumCache
+            enumCache,
+            connectionConfigScope
     );
+
+    // Apply required flags inferred for member-reference connection fields.
+    foreach [string, map<boolean>] [memberRef, requiredMemberFields] in requiredConnMemberFieldsByClass.entries() {
+        MemberClassInfo? memberInfoOpt = memberClasses[memberRef];
+        if memberInfoOpt is MemberClassInfo {
+            RequestFieldInfo[] rebuiltMemberFields = [];
+            foreach RequestFieldInfo memberFld in memberInfoOpt.fields {
+                RequestFieldInfo updatedField = memberFld;
+                if requiredMemberFields.hasKey(memberFld.name) {
+                    updatedField.isRequired = true;
+                }
+                rebuiltMemberFields.push(updatedField);
+            }
+            memberClasses[memberRef] = {
+                simpleName: memberInfoOpt.simpleName,
+                packageName: memberInfoOpt.packageName,
+                fields: rebuiltMemberFields
+            };
+        }
+    }
 
     // Finalize enum metadata from resolved member classes as well, including
     // enum-like classes that expose public static final self-typed constants.
@@ -637,7 +1108,15 @@ public function generateStructuredMetadata(
             version: "unknown",
             rootClientClass: rootClient.className
         },
-        clientInit: initPattern,
+        clientInit: {
+            patternName: initPattern.patternName,
+            initializationCode: initPattern.initializationCode,
+            explanation: initPattern.explanation,
+            detectedBy: initPattern.detectedBy,
+            builderClass: initPattern.builderClass,
+            connectionFields: updatedConnFields,
+            syntheticTypeMetadata: initPattern.syntheticTypeMetadata
+        },
         rootClient: {
             className: rootClient.className,
             packageName: rootClient.packageName,
@@ -668,13 +1147,35 @@ function extractSdkNameFromClass(ClassInfo rootClient) returns string {
     }
 
     string[] parts = regex:split(packageName, "\\.");
-    // Find last non-empty segment
+    // Find the last meaningful segment — skip version-like segments (v1, v2, v1beta1)
+    // and very short tokens so the SDK name reflects the service, not an API version.
     string last = "";
     foreach string p in parts.reverse() {
-        if p.trim().length() > 0 {
-            last = p;
-            break;
+        string pl = p.trim();
+        if pl.length() == 0 {
+            continue;
         }
+        // Skip version-like segments: starts with 'v' + digit (v1, v2, v1beta1, etc.)
+        if pl.length() > 1 && pl.startsWith("v") {
+            string afterV = pl.substring(1, 2);
+            if afterV >= "0" && afterV <= "9" {
+                continue;
+            }
+        }
+        // Skip purely numeric segments
+        boolean allDigits = true;
+        foreach int idx in 0 ..< pl.length() {
+            string ch = pl.substring(idx, idx + 1);
+            if !(ch >= "0" && ch <= "9") {
+                allDigits = false;
+                break;
+            }
+        }
+        if allDigits {
+            continue;
+        }
+        last = pl;
+        break;
     }
 
     if last.length() == 0 {
@@ -741,58 +1242,145 @@ function extractSupportingClasses(MethodInfo[] methods, ClassInfo[] allClasses)
     return supportingClasses;
 }
 
-# Check if class should be considered as client candidate
+# Check if class should be considered as client candidate.
+# Vendor-neutral: works for AWS, Google, Azure, and any other Java SDK.
 #
 # + cls - Class to check
 # + return - True if should be considered
 function shouldConsiderAsClientCandidate(ClassInfo cls) returns boolean {
-    // Skip inner classes and enums
-    if cls.className.includes("$") || cls.isEnum {
+    // Never consider enums as clients
+    if cls.isEnum {
         return false;
     }
 
-    // Skip abstract classes (but allow interfaces)
+    // Abstract classes are not direct clients (but interfaces are allowed)
     if cls.isAbstract && !cls.isInterface {
         return false;
     }
 
-    // Must have a minimum number of methods
-    if cls.methods.length() < 3 {
-        return false;
-    }
-
+    string className = cls.className;
     string simpleNameLower = cls.simpleName.toLowerAscii();
     string packageLower = cls.packageName.toLowerAscii();
 
+    // Determine nesting depth from $ separators.
+    // Inner classes in Java class files use $ as the separator between outer and inner name.
+    string[] classSegments = regex:split(className, "\\$");
+    int dollarCount = classSegments.length() - 1;
+
+    // Skip deeply nested inner classes (two or more $ levels) — these are implementation details
+    if dollarCount >= 2 {
+        return false;
+    }
+
+    // Skip anonymous inner classes — their suffix after $ is purely numeric (e.g. Foo$1, Foo$2)
+    if dollarCount == 1 {
+        string innerSuffix = classSegments[classSegments.length() - 1];
+        if innerSuffix.length() > 0 {
+            string firstChar = innerSuffix.substring(0, 1);
+            if firstChar >= "0" && firstChar <= "9" {
+                return false;
+            }
+        }
+    }
+
+    // Helper/utility classes are never root clients
     if isHelperLikeClientType(simpleNameLower) {
         return false;
     }
 
-    boolean hasClientNameSignals = simpleNameLower.includes("client") || simpleNameLower.includes("admin") ||
-        simpleNameLower.includes("producer") || simpleNameLower.includes("consumer") ||
-        simpleNameLower.includes("service") || simpleNameLower.includes("manager") ||
-        simpleNameLower.includes("connection");
-    boolean hasClientPackageSignals = packageLower.includes(".clients") || packageLower.includes(".client") ||
-        packageLower.includes(".admin") || packageLower.includes(".consumer") ||
-        packageLower.includes(".producer");
+    // Pure-static utility classes have no instance methods — skip them
+    boolean hasInstanceMethod = false;
+    foreach MethodInfo m in cls.methods {
+        if !m.isStatic {
+            hasInstanceMethod = true;
+            break;
+        }
+    }
+    if !hasInstanceMethod {
+        return false;
+    }
 
+    // Service-name signal: simple class name matches a meaningful segment of its package.
+    // Example: class "Forms" in package "com.google.api.services.forms.v1" matches "forms".
+    // This handles SDKs whose root class is named after the service without a Client/Service suffix.
+    boolean hasServiceNameSignal = matchesPackageServiceSegment(simpleNameLower, packageLower);
+
+    boolean hasClientNameSignals = simpleNameLower.includes("client") ||
+        simpleNameLower.includes("admin") ||
+        simpleNameLower.includes("producer") ||
+        simpleNameLower.includes("consumer") ||
+        simpleNameLower.includes("service") ||
+        simpleNameLower.includes("manager") ||
+        simpleNameLower.includes("connection") ||
+        simpleNameLower.includes("operations") ||
+        hasServiceNameSignal;
+
+    boolean hasClientPackageSignals = packageLower.includes(".clients") ||
+        packageLower.includes(".client") ||
+        packageLower.includes(".admin") ||
+        packageLower.includes(".consumer") ||
+        packageLower.includes(".producer") ||
+        packageLower.includes(".services");
+
+    // First-level inner class (single $): allow only when it has enough methods and naming/
+    // package signals. This captures SDK patterns where operations live on a nested sub-client
+    // returned from the root class (common in Google API client libraries).
+    if dollarCount == 1 {
+        return cls.methods.length() >= 3 && (hasClientNameSignals || hasClientPackageSignals);
+    }
+
+    // Top-level class heuristics (vendor-neutral)
     if cls.isInterface {
-        if cls.methods.length() >= 5 && (hasClientNameSignals || hasClientPackageSignals || cls.methods.length() >= 12) {
+        if cls.methods.length() >= 5 &&
+            (hasClientNameSignals || hasClientPackageSignals || cls.methods.length() >= 12) {
             return true;
         }
     } else {
         if cls.methods.length() >= 6 && (hasClientNameSignals || hasClientPackageSignals) {
             return true;
         }
-        if cls.methods.length() >= 18 && hasClientPackageSignals {
+        // High method count alone is sufficient — implementation classes without naming conventions
+        if cls.methods.length() >= 18 {
+            return true;
+        }
+        // Root delegate class: few methods but strong service-name match
+        // (e.g., Google's Forms class that only exposes forms() returning an operations sub-client)
+        if hasServiceNameSignal {
             return true;
         }
     }
-
-    if cls.methods.length() >= 25 && (hasClientNameSignals || hasClientPackageSignals) {
+    if cls.methods.length() >= 25 {
         return true;
     }
 
+    return false;
+}
+
+# Check whether a class's simple name matches a meaningful service segment in its package.
+# Skips very short segments and version-like segments (v1, v2, v1beta1, etc.).
+# Example: "Forms" matches "forms" in "com.google.api.services.forms.v1".
+#
+# + simpleNameLower - Lower-cased simple class name
+# + packageLower - Lower-cased package name
+# + return - True if a matching segment is found
+function matchesPackageServiceSegment(string simpleNameLower, string packageLower) returns boolean {
+    string[] parts = regex:split(packageLower, "\\.");
+    foreach string part in parts {
+        // Skip generic short segments
+        if part.length() <= 2 {
+            continue;
+        }
+        // Version-like: starts with 'v' followed by a digit (e.g., v1, v2, v1beta1)
+        if part.length() > 1 && part.startsWith("v") {
+            string afterV = part.substring(1, 2);
+            if afterV >= "0" && afterV <= "9" {
+                continue;
+            }
+        }
+        if part == simpleNameLower {
+            return true;
+        }
+    }
     return false;
 }
 
@@ -812,8 +1400,16 @@ function quickClientCandidatePriority(ClassInfo cls) returns int {
         simpleNameLower.includes("consumer") {
         priority += 35;
     }
+    // Operations sub-client (Google-style resource class naming)
+    if simpleNameLower.includes("operations") {
+        priority += 20;
+    }
     if packageLower.includes(".clients") || packageLower.includes(".client") {
         priority += 25;
+    }
+    // Service name match boosts root delegate classes that name themselves after the service
+    if matchesPackageServiceSegment(simpleNameLower, packageLower) {
+        priority += 30;
     }
     if cls.isInterface {
         priority += 10;
@@ -823,7 +1419,10 @@ function quickClientCandidatePriority(ClassInfo cls) returns int {
 }
 
 function isHelperLikeClientType(string simpleNameLower) returns boolean {
-    string[] helperTokens = ["builder", "config", "option", "request", "response", "result", "record",
+    // "request" and "response" are intentionally excluded: in some SDKs (e.g., Google API client
+    // library) the base request class (e.g., FormsRequest) is a meaningful operational class, not a DTO.
+    // Model-package DTOs are already excluded upstream by isRelevantClientClass.
+    string[] helperTokens = ["builder", "config", "option", "result", "record",
         "metadata", "context", "factory", "provider", "interceptor", "serializer", "deserializer",
         "authenticator", "readable", "writable", "util", "helper"];
     foreach string token in helperTokens {
@@ -1155,11 +1754,9 @@ function selectTopNMethodsWithLLM(MethodInfo[] methods, int n) returns MethodInf
 # + clientClass - The client class to analyze
 # + return - Detected initialization pattern
 function detectClientInitPatternHeuristically(ClassInfo clientClass) returns ClientInitPattern {
-    // Prefer detecting builder/static-factory patterns via presence of static methods
     foreach MethodInfo m in clientClass.methods {
         if m.isStatic {
             string nameLower = m.name.toLowerAscii();
-            // static builder() method (common in AWS SDK v2)
             if nameLower == "builder" {
                 return {
                     patternName: "builder",
@@ -1168,7 +1765,14 @@ function detectClientInitPatternHeuristically(ClassInfo clientClass) returns Cli
                     detectedBy: "heuristic"
                 };
             }
-            // static create() or createX factory method
+            if nameLower == "newbuilder" {
+                return {
+                    patternName: "builder",
+                    initializationCode: clientClass.simpleName + " client = " + clientClass.simpleName + ".newBuilder().build();",
+                    explanation: "Detected static newBuilder() method",
+                    detectedBy: "heuristic"
+                };
+            }
             if nameLower == "create" || nameLower.startsWith("create") {
                 return {
                     patternName: "static-factory",
@@ -1178,6 +1782,28 @@ function detectClientInitPatternHeuristically(ClassInfo clientClass) returns Cli
                 };
             }
         }
+    }
+
+    string innerBuilderClassName = clientClass.className + "$Builder";
+    boolean hasInnerBuilder = false;
+    foreach ConstructorInfo ctor in clientClass.constructors {
+        foreach ParameterInfo p in ctor.parameters {
+            if p.typeName.endsWith("Builder") || p.typeName == innerBuilderClassName {
+                hasInnerBuilder = true;
+                break;
+            }
+        }
+        if hasInnerBuilder {
+            break;
+        }
+    }
+    if hasInnerBuilder {
+        return {
+            patternName: "builder",
+            initializationCode: "new " + clientClass.simpleName + ".Builder(...).build();",
+            explanation: "Detected inner Builder class instantiated via constructor",
+            detectedBy: "heuristic"
+        };
     }
 
     // Fall back to constructors if present
@@ -1324,7 +1950,6 @@ function isRedundantAsStringField(string fieldName, RequestFieldInfo[] allFields
     // Check if the base field exists
     foreach RequestFieldInfo fld in allFields {
         if fld.name == baseFieldName {
-            // Base field exists, this AsString variant is redundant
             return true;
         }
     }
@@ -1338,17 +1963,18 @@ function isRedundantAsStringField(string fieldName, RequestFieldInfo[] allFields
 # + allClasses - All parsed classes from the main analysis
 # + dependencyJarPaths - Dependency JAR paths for resolving external types
 # + enumCache - Mutable enum cache to record discovered nested enums
+# + connectionConfigScope - Mutable set of class names that belong to connection-config recursion scope
 # + return - Map of member class info with extracted fields
 function extractMemberClassInfo(
         map<ClassInfo> memberClassCache,
         ClassInfo[] allClasses,
         string[] dependencyJarPaths,
-        map<EnumMetadata> enumCache
+    map<EnumMetadata> enumCache,
+    map<boolean> connectionConfigScope
 ) returns map<MemberClassInfo> {
     map<MemberClassInfo> result = {};
+    ClassInfo[] resolvedClasses = [...allClasses];
 
-    // Traverse recursively over cached member classes, expanding nested non-primitive types
-    // until primitive/standard Java leaf types are reached.
     string[] pending = memberClassCache.keys();
     int index = 0;
 
@@ -1361,14 +1987,86 @@ function extractMemberClassInfo(
         }
         ClassInfo classInfo = classInfoOpt;
 
-        RequestFieldInfo[] extractedFields;
+        if isDisallowedConfigTypeClass(classInfo.className) {
+            index += 1;
+            continue;
+        }
 
-        // For enums, extract the actual enum constants from the fields array
-        if classInfo.isEnum {
+        boolean isConnectionScoped = connectionConfigScope.hasKey(className);
+
+        RequestFieldInfo[] extractedFields;
+        if isConnectionScoped {
+            extractedFields = extractClassAndAncestorFields(
+                classInfo,
+                resolvedClasses,
+                dependencyJarPaths
+            );
+        } else if classInfo.isEnum {
             extractedFields = extractEnumConstants(classInfo);
+        } else if classInfo.isInterface {
+            extractedFields = extractClassAndAncestorFields(classInfo, resolvedClasses, dependencyJarPaths);
         } else {
-            // For regular classes, extract fields from getter methods
-            extractedFields = extractResponseFields(classInfo);
+            extractedFields = [];
+            foreach FieldInfo fld in classInfo.fields {
+                if fld.isStatic {
+                    continue;
+                }
+                extractedFields.push({
+                    name: fld.name,
+                    typeName: extractSimpleTypeName(fld.typeName),
+                    fullType: fld.typeName,
+                    isRequired: true
+                });
+            }
+
+            if extractedFields.length() == 0 {
+                map<boolean> existingFieldNames = {};
+                // A: Public constructors
+                foreach ConstructorInfo ctor in classInfo.constructors {
+                    if ctor.parameters.length() == 0 {
+                        continue;
+                    }
+                    foreach ParameterInfo param in ctor.parameters {
+                        if param.name == "" || param.name.startsWith("arg") {
+                            continue;
+                        }
+                        if existingFieldNames.hasKey(param.name) {
+                            continue;
+                        }
+                        existingFieldNames[param.name] = true;
+                        extractedFields.push({
+                            name: param.name,
+                            typeName: extractSimpleTypeName(param.typeName),
+                            fullType: param.typeName,
+                            isRequired: true
+                        });
+                    }
+                }
+                // B: Static factory methods whose return type is this class
+                foreach MethodInfo m in classInfo.methods {
+                    if !m.isStatic || m.parameters.length() == 0 {
+                        continue;
+                    }
+                    if extractSimpleTypeName(m.returnType) != classInfo.simpleName {
+                        continue;
+                    }
+                    foreach ParameterInfo param in m.parameters {
+                        if param.name == "" || param.name.startsWith("arg") {
+                            continue;
+                        }
+                        if existingFieldNames.hasKey(param.name) {
+                            continue;
+                        }
+                        existingFieldNames[param.name] = true;
+                        extractedFields.push({
+                            name: param.name,
+                            typeName: extractSimpleTypeName(param.typeName),
+                            fullType: param.typeName,
+                            isRequired: true
+                        });
+                    }
+                }
+            }
         }
 
         // Filter redundant AsString fields from member class fields too
@@ -1392,41 +2090,67 @@ function extractMemberClassInfo(
                     }
 
                     if memberClass is ClassInfo {
+                        if isDisallowedConfigTypeClass(memberClass.className) {
+                            continue;
+                        }
+
                         if memberClass.isEnum || hasEnumLikeConstants(memberClass) {
                             if memberClass.isEnum {
-                                enhanced.enumReference = genericParam;
+                                enhanced.enumReference = memberClass.className;
                             }
-                            if !enumCache.hasKey(genericParam) {
-                                enumCache[genericParam] = extractEnumMetadata(memberClass);
+                            if !enumCache.hasKey(memberClass.className) {
+                                enumCache[memberClass.className] = extractEnumMetadata(memberClass);
                             }
                         } else if memberClass.className != className &&
-                                !memberClassCache.hasKey(genericParam) {
-                            memberClassCache[genericParam] = memberClass;
-                            pending.push(genericParam);
+                                !memberClassCache.hasKey(memberClass.className) {
+                            memberClassCache[memberClass.className] = memberClass;
+                            pending.push(memberClass.className);
+                            if isConnectionScoped {
+                                connectionConfigScope[memberClass.className] = true;
+                            }
                         }
+
+                        enhanced.memberReference = memberClass.className;
                     }
                 }
             } else if !isSimpleType(fld.fullType) && !isStandardJavaType(fld.fullType) {
                 // Resolve nested object/enum fields recursively
-                ClassInfo? nestedClass = findClassByName(fld.fullType, allClasses);
-                if nestedClass is () {
-                    nestedClass = resolveClassFromJars(fld.fullType, dependencyJarPaths);
-                }
+                ClassInfo? nestedClass = findOrResolveClass(fld.fullType, resolvedClasses, dependencyJarPaths);
 
                 if nestedClass is ClassInfo {
+                    if isDisallowedConfigTypeClass(nestedClass.className) {
+                        continue;
+                    }
+
                     if nestedClass.isEnum || hasEnumLikeConstants(nestedClass) {
                         if nestedClass.isEnum {
-                            enhanced.enumReference = fld.fullType;
+                            enhanced.enumReference = nestedClass.className;
                         }
-                        if !enumCache.hasKey(fld.fullType) {
-                            enumCache[fld.fullType] = extractEnumMetadata(nestedClass);
+                        if !enumCache.hasKey(nestedClass.className) {
+                            enumCache[nestedClass.className] = extractEnumMetadata(nestedClass);
                         }
                     } else {
-                        enhanced.memberReference = fld.fullType;
+                        enhanced.memberReference = nestedClass.className;
                         if nestedClass.className != className &&
-                            !memberClassCache.hasKey(fld.fullType) {
-                            memberClassCache[fld.fullType] = nestedClass;
-                            pending.push(fld.fullType);
+                            !memberClassCache.hasKey(nestedClass.className) {
+                            memberClassCache[nestedClass.className] = nestedClass;
+                            pending.push(nestedClass.className);
+                            if isConnectionScoped {
+                                connectionConfigScope[nestedClass.className] = true;
+                            }
+                        }
+
+                        if nestedClass.isInterface || nestedClass.isAbstract {
+                            ClassInfo[] nestedImpls = findInterfaceImplementors(
+                                nestedClass.className, resolvedClasses, dependencyJarPaths);
+                            foreach ClassInfo implCls in nestedImpls {
+                                if isDisallowedConfigTypeClass(implCls.className) ||
+                                        memberClassCache.hasKey(implCls.className) {
+                                    continue;
+                                }
+                                memberClassCache[implCls.className] = implCls;
+                                pending.push(implCls.className);
+                            }
                         }
                     }
                 }
@@ -1449,6 +2173,146 @@ function extractMemberClassInfo(
     return result;
 }
 
+function extractClassAndAncestorFields(
+        ClassInfo classInfo,
+        ClassInfo[] resolvedClasses,
+        string[] dependencyJarPaths
+) returns RequestFieldInfo[] {
+    map<boolean> visited = {};
+    RequestFieldInfo[] collected = [];
+
+    collectClassHierarchyFields(classInfo, resolvedClasses, dependencyJarPaths, visited, collected);
+
+    map<boolean> seen = {};
+    RequestFieldInfo[] unique = [];
+    foreach RequestFieldInfo fld in collected {
+        string key = fld.name + "|" + fld.fullType;
+        if seen.hasKey(key) {
+            continue;
+        }
+        seen[key] = true;
+        unique.push(fld);
+    }
+
+    return unique;
+}
+
+function collectClassHierarchyFields(
+        ClassInfo classInfo,
+        ClassInfo[] resolvedClasses,
+        string[] dependencyJarPaths,
+        map<boolean> visited,
+        RequestFieldInfo[] collected
+) {
+    if visited.hasKey(classInfo.className) {
+        return;
+    }
+    visited[classInfo.className] = true;
+    log:printDebug("Collecting hierarchy fields", className = classInfo.className);
+
+    RequestFieldInfo[] ownFields;
+    if classInfo.isEnum {
+        ownFields = extractEnumConstants(classInfo);
+    } else {
+        ownFields = extractResponseFields(classInfo);
+    }
+
+    foreach RequestFieldInfo ownField in ownFields {
+        collected.push(ownField);
+    }
+    log:printDebug("Own fields collected", className = classInfo.className, count = ownFields.length());
+
+    string? superClass = classInfo.superClass;
+    if superClass is string && superClass != "" && superClass != "java.lang.Object" {
+        log:printDebug("Traversing superclass for hierarchy fields", sourceClass = classInfo.className, superClass = superClass);
+        ClassInfo? superInfo = findOrResolveClass(superClass, resolvedClasses, dependencyJarPaths);
+        if superInfo is ClassInfo {
+            collectClassHierarchyFields(superInfo, resolvedClasses, dependencyJarPaths, visited, collected);
+        }
+    }
+
+    // Traverse own interfaces upward (not looking for implementers downward)
+    foreach string iface in classInfo.interfaces {
+        if iface == "" || iface == "java.lang.Object" {
+            continue;
+        }
+        log:printDebug("Traversing interface for hierarchy fields", sourceClass = classInfo.className, iface = iface);
+        ClassInfo? ifaceInfo = findOrResolveClass(iface, resolvedClasses, dependencyJarPaths);
+        if ifaceInfo is ClassInfo {
+            collectClassHierarchyFields(ifaceInfo, resolvedClasses, dependencyJarPaths, visited, collected);
+        }
+    }
+}
+
+function buildConnectionConfigScope(ConnectionFieldInfo[] connectionFields) returns map<boolean> {
+    map<boolean> scope = {};
+
+    foreach ConnectionFieldInfo connField in connectionFields {
+        if connField.typeReference is string {
+            string typeRef = <string>connField.typeReference;
+            if typeRef.trim() != "" && !isDisallowedConfigTypeClass(typeRef) {
+                scope[typeRef] = true;
+            }
+        }
+        if connField.memberReference is string {
+            string memberRef = <string>connField.memberReference;
+            if memberRef.trim() != "" && !isDisallowedConfigTypeClass(memberRef) {
+                scope[memberRef] = true;
+            }
+        }
+        if connField.enumReference is string {
+            string enumRef = <string>connField.enumReference;
+            if enumRef.trim() != "" && !isDisallowedConfigTypeClass(enumRef) {
+                scope[enumRef] = true;
+            }
+        }
+    }
+
+    return scope;
+}
+
+function isDisallowedConfigTypeClass(string className) returns boolean {
+    string n = className.trim();
+    if n == "" {
+        return true;
+    }
+
+    string lower = n.toLowerAscii();
+
+    // Builder classes
+    if lower.includes("$builder") || lower.endsWith("builder") {
+        return true;
+    }
+
+    // Internal/impl packages
+    if lower.includes(".internal.") || lower.includes(".impl.") {
+        return true;
+    }
+
+    // Inner classes (except $Type enums)
+    if n.includes("$") && !n.endsWith("$Type") {
+        return true;
+    }
+
+    // Native/CRT layer — never user-facing config
+    if lower.includes(".crt.") {
+        return true;
+    }
+
+    // Lifecycle sub-systems (waiters, signers, interceptors) — not connection config types
+    if lower.includes(".waiters.") || lower.includes(".signer.") ||
+        lower.includes(".interceptor.") || lower.includes(".handlers.") {
+        return true;
+    }
+
+    // Generic internal framework package patterns.
+    if lower.endsWith(".internal") || lower.endsWith(".impl") {
+        return true;
+    }
+
+    return false;
+}
+
 # Resolve connection fields for builder pattern using LLM enrichment.
 #
 # + clientClass - The client ClassInfo for which to resolve builder connection fields 
@@ -1465,36 +2329,31 @@ function resolveBuilderConnectionFields(
         string clientSimpleName
 ) returns [string?, ConnectionFieldInfo[], SyntheticTypeMetadata[]] {
 
+    log:printInfo("Resolving builder connection fields", clientClass = clientClass.className);
     ClassInfo? builderClass = findBuilderClass(clientClass, allClasses, dependencyJarPaths);
     if builderClass is () {
+        log:printInfo("No builder class found for client", clientClass = clientClass.className);
         return [(), [], []];
     }
+    log:printInfo("Builder class found", clientClass = clientClass.className, builderClass = builderClass.className);
 
     ConnectionFieldInfo[] fields = [];
     map<boolean> visitedClasses = {};
-    map<boolean> visitedFieldNames = {};
+        map<boolean> visitedFieldKeys = {};
     ClassInfo[] resolvedClasses = [...allClasses];
 
     collectBuilderSetters(
             builderClass, resolvedClasses, dependencyJarPaths,
-            fields, visitedClasses, visitedFieldNames, 0
+            fields, visitedClasses, visitedFieldKeys, 0
     );
+    log:printInfo("Raw builder setters collected", builderClass = builderClass.className, fieldCount = fields.length());
 
     if fields.length() == 0 {
         return [builderClass.className, [], []];
     }
 
-    // Enrich ALL fields via a single batched LLM call.
-    // Returns both the enriched fields and synthetic type metadata.
-    [ConnectionFieldInfo[], SyntheticTypeMetadata[]] enrichResult =
-        enrichConnectionFieldsWithLLM(fields, sdkPackage, clientSimpleName);
-
-    ConnectionFieldInfo[] enrichedFields = enrichResult[0];
-    SyntheticTypeMetadata[] syntheticMeta = enrichResult[1];
-
-    // Strip the internal level1Context before returning.
     ConnectionFieldInfo[] clean = [];
-    foreach ConnectionFieldInfo f in enrichedFields {
+    foreach ConnectionFieldInfo f in fields {
         ConnectionFieldInfo stripped = {
             name: f.name,
             typeName: f.typeName,
@@ -1503,13 +2362,13 @@ function resolveBuilderConnectionFields(
             enumReference: f.enumReference,
             memberReference: f.memberReference,
             typeReference: f.typeReference,
-            description: f.description
-            // level1Context intentionally omitted
+            description: f.description,
+            interfaceImplementations: f.interfaceImplementations
         };
         clean.push(stripped);
     }
 
-    return [builderClass.className, clean, syntheticMeta];
+    return [builderClass.className, clean, []];
 }
 
 # Find the builder class for a client class.
@@ -1519,51 +2378,146 @@ function resolveBuilderConnectionFields(
 # + dependencyJarPaths - Paths to dependency JARs for resolving external classes
 # + return - The builder ClassInfo if found, otherwise ()
 function findBuilderClass(ClassInfo clientClass, ClassInfo[] allClasses, string[] dependencyJarPaths) returns ClassInfo? {
+    log:printInfo("Searching for builder class", clientClass = clientClass.className);
+    ClassInfo[] candidates = [];
+
+    // Strategy 0: direct inner-class builder lookup.
+    foreach ClassInfo cls in allClasses {
+        string sn = cls.simpleName;
+        string cn = cls.className;
+        if (sn == clientClass.simpleName + "Builder" || sn == "Builder") &&
+            (cn == clientClass.className + "$Builder" ||
+             cn.startsWith(clientClass.className + "$") && sn == "Builder") {
+            candidates.push(cls);
+        }
+    }
+    // Also try resolving from dependency JARs when not already found in allClasses
+    if candidates.length() == 0 {
+        string innerBuilderName = clientClass.className + "$Builder";
+        ClassInfo? innerBuilderCls = resolveClassFromJars(innerBuilderName, dependencyJarPaths);
+        if innerBuilderCls is ClassInfo {
+            candidates.push(innerBuilderCls);
+        }
+    }
+    log:printDebug("Strategy 0 (inner-class builder) candidates", clientClass = clientClass.className, count = candidates.length());
+
     // Strategy 1: static builder() method return type
     foreach MethodInfo m in clientClass.methods {
         if m.isStatic && m.name == "builder" && m.returnType != "void" {
             ClassInfo? found = findClassByName(m.returnType, allClasses);
             if found is ClassInfo {
-                return found;
+                candidates.push(found);
             }
             // returnType may be a simple name, try qualifying with client package
             string qualified = clientClass.packageName + "." + m.returnType;
             found = findClassByName(qualified, allClasses);
             if found is ClassInfo {
-                return found;
+                candidates.push(found);
             }
             // Try to resolve from dependency JARs
             found = resolveClassFromJars(m.returnType, dependencyJarPaths);
             if found is ClassInfo {
-                return found;
+                candidates.push(found);
             }
             found = resolveClassFromJars(qualified, dependencyJarPaths);
             if found is ClassInfo {
-                return found;
+                candidates.push(found);
             }
         }
     }
+
+    log:printDebug("Strategy 1 (static builder() method) candidates", clientClass = clientClass.className, count = candidates.length());
 
     // Strategy 2: name-convention search for Builder in same package
     string clientSimple = clientClass.simpleName;
     foreach ClassInfo cls in allClasses {
         string sn = cls.simpleName;
         if (sn == clientSimple + "Builder" || sn == clientSimple + "$Builder") &&
-            cls.packageName == clientClass.packageName {
-            return cls;
+            cls.packageName.startsWith(clientClass.packageName) {
+            candidates.push(cls);
         }
     }
+
+    log:printDebug("Strategy 2 (name-convention search) candidates", clientClass = clientClass.className, count = candidates.length());
 
     // Strategy 3: any Builder in same package whose name contains the client name
     foreach ClassInfo cls in allClasses {
         if cls.simpleName.endsWith("Builder") &&
-            cls.packageName == clientClass.packageName &&
+            cls.packageName.startsWith(clientClass.packageName) &&
             cls.simpleName.includes(clientSimple) {
-            return cls;
+            candidates.push(cls);
+        }
+    }
+    log:printDebug("Strategy 3 (contains-name Builder in package) candidates", clientClass = clientClass.className, count = candidates.length());
+
+    if candidates.length() == 0 {
+        log:printInfo("No builder candidates found", clientClass = clientClass.className);
+        return ();
+    }
+
+    ClassInfo[] uniqueCandidates = [];
+    foreach ClassInfo candidate in candidates {
+        boolean exists = false;
+        foreach ClassInfo existing in uniqueCandidates {
+            if existing.className == candidate.className {
+                exists = true;
+                break;
+            }
+        }
+        if !exists {
+            uniqueCandidates.push(candidate);
         }
     }
 
-    return ();
+    ClassInfo best = uniqueCandidates[0];
+    int bestScore = scoreBuilderCandidate(best, clientClass);
+    foreach int index in 1 ..< uniqueCandidates.length() {
+        ClassInfo current = uniqueCandidates[index];
+        int score = scoreBuilderCandidate(current, clientClass);
+        if score > bestScore {
+            best = current;
+            bestScore = score;
+        }
+    }
+
+    log:printInfo("Builder class selected", clientClass = clientClass.className, builderClass = best.className, score = bestScore);
+    return best;
+}
+
+function scoreBuilderCandidate(ClassInfo candidate, ClassInfo clientClass) returns int {
+    int score = 0;
+    string candidateName = candidate.className.toLowerAscii();
+    string clientSimple = clientClass.simpleName.toLowerAscii();
+
+    if candidate.isInterface {
+        score -= 20;
+    } else {
+        score += 10;
+    }
+    if candidate.isAbstract {
+        score -= 10;
+    }
+
+    if candidateName.includes(clientSimple) {
+        score += 8;
+    }
+    if candidateName.endsWith("builder") || candidateName.endsWith("$builder") {
+        score += 6;
+    }
+
+    foreach MethodInfo method in candidate.methods {
+        if !method.isStatic && method.parameters.length() == 1 {
+            score += 1;
+        }
+    }
+
+    foreach FieldInfo fld in candidate.fields {
+        if !fld.isStatic {
+            score += 1;
+        }
+    }
+
+    return score;
 }
 
 # Recursively collect setter-style methods from a builder class and its ancestors.
@@ -1573,7 +2527,7 @@ function findBuilderClass(ClassInfo clientClass, ClassInfo[] allClasses, string[
 # + dependencyJarPaths - Paths to dependency JARs for resolving external classes
 # + fields - The collected ConnectionFieldInfo array
 # + visitedClasses - Map of visited class names to prevent infinite loops
-# + visitedFieldNames - Map of visited field names to prevent duplicates
+# + visitedFieldKeys - Map of visited field keys (name+type) to prevent exact duplicates
 # + depth - The current recursion depth
 function collectBuilderSetters(
         ClassInfo builderClass,
@@ -1581,17 +2535,14 @@ function collectBuilderSetters(
         string[] dependencyJarPaths,
         ConnectionFieldInfo[] fields,
         map<boolean> visitedClasses,
-        map<boolean> visitedFieldNames,
+        map<boolean> visitedFieldKeys,
         int depth
 ) {
-    int maxDepth = 8;
-    if depth > maxDepth {
-        return;
-    }
     if visitedClasses.hasKey(builderClass.className) {
         return;
     }
     visitedClasses[builderClass.className] = true;
+    log:printDebug("Collecting builder setters", builderClass = builderClass.className, depth = depth);
 
     foreach FieldInfo fld in builderClass.fields {
         if fld.isStatic {
@@ -1601,17 +2552,59 @@ function collectBuilderSetters(
         if fieldName.startsWith("$") || fieldName.startsWith("_") {
             continue;
         }
-        if visitedFieldNames.hasKey(fieldName) {
-            continue;
-        }
         if shouldFilterField(fieldName, fld.typeName) {
             continue;
         }
-        visitedFieldNames[fieldName] = true;
+
+        string fieldKey = buildConnectionFieldDedupKey(fieldName, fld.typeName);
+        if visitedFieldKeys.hasKey(fieldKey) {
+            continue;
+        }
+        visitedFieldKeys[fieldKey] = true;
 
         string paramSimple = extractSimpleTypeName(fld.typeName);
         ClassInfo? resolvedClass = findOrResolveClass(fld.typeName, resolvedClasses, dependencyJarPaths);
         string level1Ctx = resolvedClass is ClassInfo ? buildLevel1Context(resolvedClass) : "";
+        string[] implFqns = [];
+        if resolvedClass is ClassInfo {
+            if (resolvedClass.isInterface || resolvedClass.isAbstract) && !isStandardJavaType(fld.typeName) {
+                log:printInfo("Instance field type is interface/abstract, searching for implementations",
+                    fieldName = fieldName, interfaceType = fld.typeName,
+                    isInterface = resolvedClass.isInterface, isAbstract = resolvedClass.isAbstract);
+                ClassInfo[] implClasses = findInterfaceImplementors(fld.typeName, resolvedClasses, dependencyJarPaths);
+                if implClasses.length() > 0 {
+                    foreach ClassInfo implCls in implClasses {
+                        implFqns.push(implCls.className);
+                        boolean alreadyInResolved = false;
+                        foreach ClassInfo rc in resolvedClasses {
+                            if rc.className == implCls.className {
+                                alreadyInResolved = true;
+                                break;
+                            }
+                        }
+                        if !alreadyInResolved {
+                            resolvedClasses.push(implCls);
+                        }
+                    }
+                    level1Ctx = buildInterfaceImplementationsContext(implClasses);
+                    log:printInfo("Interface implementations found for instance field",
+                        fieldName = fieldName, interfaceType = fld.typeName, implCount = implFqns.length(),
+                        impls = string:'join(", ", ...implFqns));
+                } else {
+                    log:printInfo("No implementations found for interface instance field",
+                        fieldName = fieldName, interfaceType = fld.typeName,
+                        depJarCount = dependencyJarPaths.length());
+                }
+            }
+        } else {
+            log:printInfo("Instance field type not resolved from JARs",
+                fieldName = fieldName, fullType = fld.typeName,
+                depJarCount = dependencyJarPaths.length());
+        }
+        log:printInfo("Connection field extracted (instance field)",
+            fieldName = fieldName, fullType = fld.typeName,
+            typeResolved = resolvedClass is ClassInfo,
+            builderClassName = builderClass.className);
 
         ConnectionFieldInfo info = {
             name: fieldName,
@@ -1619,7 +2612,8 @@ function collectBuilderSetters(
             fullType: fld.typeName,
             isRequired: false,
             description: fld.javadoc,
-            level1Context: level1Ctx
+            level1Context: level1Ctx,
+            interfaceImplementations: implFqns
         };
 
         if !isPrimitiveType(fld.typeName) {
@@ -1632,12 +2626,14 @@ function collectBuilderSetters(
                     }
                 }
             } else if !isStandardJavaType(fld.typeName) {
-                // Set typeReference regardless of whether the class resolved.
-                // enrichConnectionFieldsWithLLM will correct this later.
-                info.typeReference = fld.typeName;
-                if resolvedClass is ClassInfo && resolvedClass.isEnum {
-                    info.enumReference = fld.typeName;
-                    info.typeReference = ();
+                if implFqns.length() > 0 {
+                } else {
+                    info.typeReference = fld.typeName;
+                    if resolvedClass is ClassInfo &&
+                        (resolvedClass.isEnum || hasEnumLikeConstants(resolvedClass)) {
+                        info.enumReference = fld.typeName;
+                        info.typeReference = ();
+                    }
                 }
             }
         }
@@ -1702,14 +2698,55 @@ function collectBuilderSetters(
         if shouldFilterField(fieldName, paramFullType) {
             continue;
         }
-        if visitedFieldNames.hasKey(fieldName) {
+
+        string fieldKey = buildConnectionFieldDedupKey(fieldName, paramFullType);
+        if visitedFieldKeys.hasKey(fieldKey) {
             continue;
         }
-        visitedFieldNames[fieldName] = true;
+        visitedFieldKeys[fieldKey] = true;
 
         ClassInfo? paramTypeClass = findOrResolveClass(paramFullType, resolvedClasses, dependencyJarPaths);
-        // level1Context is always a non-null string
         string level1Ctx = paramTypeClass is ClassInfo ? buildLevel1Context(paramTypeClass) : "";
+        string[] implFqns = [];
+        if paramTypeClass is ClassInfo {
+            if (paramTypeClass.isInterface || paramTypeClass.isAbstract) && !isStandardJavaType(paramFullType) {
+                log:printInfo("Setter param type is interface/abstract, searching for implementations",
+                    fieldName = fieldName, interfaceType = paramFullType,
+                    isInterface = paramTypeClass.isInterface, isAbstract = paramTypeClass.isAbstract);
+                ClassInfo[] implClasses = findInterfaceImplementors(paramFullType, resolvedClasses, dependencyJarPaths);
+                if implClasses.length() > 0 {
+                    foreach ClassInfo implCls in implClasses {
+                        implFqns.push(implCls.className);
+                        boolean alreadyInResolved = false;
+                        foreach ClassInfo rc in resolvedClasses {
+                            if rc.className == implCls.className {
+                                alreadyInResolved = true;
+                                break;
+                            }
+                        }
+                        if !alreadyInResolved {
+                            resolvedClasses.push(implCls);
+                        }
+                    }
+                    level1Ctx = buildInterfaceImplementationsContext(implClasses);
+                    log:printInfo("Interface implementations found for setter method",
+                        fieldName = fieldName, interfaceType = paramFullType, implCount = implFqns.length(),
+                        impls = string:'join(", ", ...implFqns));
+                } else {
+                    log:printInfo("No implementations found for interface setter param",
+                        fieldName = fieldName, interfaceType = paramFullType,
+                        depJarCount = dependencyJarPaths.length());
+                }
+            }
+        } else {
+            log:printInfo("Setter param type not resolved from JARs",
+                fieldName = fieldName, fullType = paramFullType,
+                depJarCount = dependencyJarPaths.length());
+        }
+        log:printInfo("Connection field extracted (setter method)",
+            fieldName = fieldName, fullType = paramFullType,
+            typeResolved = paramTypeClass is ClassInfo,
+            builderClassName = builderClass.className);
 
         ConnectionFieldInfo info = {
             name: fieldName,
@@ -1717,7 +2754,8 @@ function collectBuilderSetters(
             fullType: paramFullType,
             isRequired: false,
             description: m.description,
-            level1Context: level1Ctx
+            level1Context: level1Ctx,
+            interfaceImplementations: implFqns
         };
 
         if !isPrimitiveType(paramFullType) {
@@ -1730,12 +2768,14 @@ function collectBuilderSetters(
                     }
                 }
             } else if !isStandardJavaType(paramFullType) {
-                // Set typeReference regardless of resolution outcome.
-                // enrichConnectionFieldsWithLLM corrects this based on ballerinaType.
-                info.typeReference = paramFullType;
-                if paramTypeClass is ClassInfo && paramTypeClass.isEnum {
-                    info.enumReference = paramFullType;
-                    info.typeReference = ();
+                if implFqns.length() > 0 {
+                } else {
+                    info.typeReference = paramFullType;
+                    if paramTypeClass is ClassInfo &&
+                        (paramTypeClass.isEnum || hasEnumLikeConstants(paramTypeClass)) {
+                        info.enumReference = paramFullType;
+                        info.typeReference = ();
+                    }
                 }
             }
         }
@@ -1746,27 +2786,129 @@ function collectBuilderSetters(
     // Superclass recursion
     string? superClass = builderClass.superClass;
     if superClass is string && superClass != "java.lang.Object" && superClass != "" {
-        ClassInfo? superInfo = findOrResolveClass(superClass, resolvedClasses, dependencyJarPaths);
-        if superInfo is ClassInfo {
-            collectBuilderSetters(superInfo, resolvedClasses, dependencyJarPaths,
-                    fields, visitedClasses, visitedFieldNames, depth + 1);
+        string[] superCandidates = normalizeCandidateTypeNames(superClass);
+        if superCandidates.length() == 0 {
+            superCandidates.push(superClass);
+        }
+        foreach string superCandidate in superCandidates {
+            if superCandidate == "" || superCandidate == "java.lang.Object" {
+                continue;
+            }
+            ClassInfo? superInfo = findOrResolveClass(superCandidate, resolvedClasses, dependencyJarPaths);
+            if superInfo is ClassInfo {
+                log:printDebug("Recursing into builder superclass", sourceClass = builderClass.className, superClass = superCandidate, depth = depth);
+                collectBuilderSetters(superInfo, resolvedClasses, dependencyJarPaths,
+                        fields, visitedClasses, visitedFieldKeys, depth + 1);
+                break;
+            }
         }
     }
 
     // Interface recursion
     foreach string iface in builderClass.interfaces {
-        string ifaceName = iface;
-        int? angleIdx = iface.indexOf("<");
-        if angleIdx is int && angleIdx > 0 {
-            ifaceName = iface.substring(0, angleIdx);
+        string[] interfaceCandidates = normalizeCandidateTypeNames(iface);
+        if interfaceCandidates.length() == 0 {
+            interfaceCandidates.push(iface);
         }
-        if ifaceName == "java.lang.Object" || ifaceName == "" {
-            continue;
-        }
-        ClassInfo? ifaceInfo = findOrResolveClass(ifaceName, resolvedClasses, dependencyJarPaths);
-        if ifaceInfo is ClassInfo {
-            collectBuilderSetters(ifaceInfo, resolvedClasses, dependencyJarPaths,
-                    fields, visitedClasses, visitedFieldNames, depth + 1);
+        foreach string ifaceCandidate in interfaceCandidates {
+            if ifaceCandidate == "" || ifaceCandidate == "java.lang.Object" {
+                continue;
+            }
+            ClassInfo? ifaceInfo = findOrResolveClass(ifaceCandidate, resolvedClasses, dependencyJarPaths);
+            if ifaceInfo is ClassInfo {
+                log:printDebug("Recursing into builder interface", sourceClass = builderClass.className, iface = ifaceCandidate, depth = depth);
+                collectBuilderSetters(ifaceInfo, resolvedClasses, dependencyJarPaths,
+                        fields, visitedClasses, visitedFieldKeys, depth + 1);
+                break;
+            }
         }
     }
+}
+
+function buildConnectionFieldDedupKey(string fieldName, string fullType) returns string {
+    return fieldName + "|" + fullType;
+}
+
+# Find all concrete implementations of an interface or abstract class.
+#
+# + interfaceFqn - Fully qualified name of the interface/abstract class to find implementations for
+# + resolvedClasses - Already-loaded class pool (mutated: newly resolved impls are added)
+# + dependencyJarPaths - Dependency JAR paths for Phase 2 scanning
+# + return - All concrete implementing ClassInfo records found
+function findInterfaceImplementors(
+        string interfaceFqn,
+        ClassInfo[] resolvedClasses,
+        string[] dependencyJarPaths
+) returns ClassInfo[] {
+    ClassInfo[] impls = [];
+    string ifaceSimple = extractSimpleTypeName(interfaceFqn);
+    log:printInfo("Finding interface implementors",
+        interfaceFqn = interfaceFqn, resolvedClassCount = resolvedClasses.length(),
+        depJarCount = dependencyJarPaths.length());
+
+    // Phase 1: scan already-resolved classes
+    foreach ClassInfo candidate in resolvedClasses {
+        if candidate.isAbstract || candidate.isInterface || candidate.isEnum {
+            continue;
+        }
+        if isDisallowedConfigTypeClass(candidate.className) {
+            continue;
+        }
+        boolean isImpl = false;
+        foreach string iface in candidate.interfaces {
+            if iface == interfaceFqn || iface.endsWith("." + ifaceSimple) {
+                isImpl = true;
+                break;
+            }
+        }
+        if !isImpl {
+            string? sc = candidate.superClass;
+            if sc is string && (sc == interfaceFqn || sc.endsWith("." + ifaceSimple)) {
+                isImpl = true;
+            }
+        }
+        if isImpl {
+            impls.push(candidate);
+            log:printInfo("Phase 1: found implementation in resolved classes",
+                interfaceFqn = interfaceFqn, implClass = candidate.className);
+        }
+    }
+    log:printInfo("Phase 1 complete", interfaceFqn = interfaceFqn, phase1ImplCount = impls.length());
+
+    // Phase 2: scan dependency JARs for additional implementations
+    log:printInfo("Phase 2: scanning dependency JARs for implementors",
+        interfaceFqn = interfaceFqn, depJarCount = dependencyJarPaths.length());
+    string[] depImplementors = findImplementorsInJars(interfaceFqn, dependencyJarPaths);
+    log:printInfo("Phase 2: JAR scan returned implementor names",
+        interfaceFqn = interfaceFqn, rawCount = depImplementors.length(),
+        names = string:'join(", ", ...depImplementors));
+    foreach string implName in depImplementors {
+        if isDisallowedConfigTypeClass(implName) {
+            continue;
+        }
+        boolean alreadyFound = false;
+        foreach ClassInfo existing in impls {
+            if existing.className == implName {
+                alreadyFound = true;
+                break;
+            }
+        }
+        if alreadyFound {
+            continue;
+        }
+        ClassInfo? implClass = resolveClassFromJars(implName, dependencyJarPaths);
+        if implClass is ClassInfo && !implClass.isAbstract && !implClass.isInterface && !implClass.isEnum {
+            impls.push(implClass);
+            log:printInfo("Phase 2: resolved implementation from JARs",
+                interfaceFqn = interfaceFqn, implClass = implName);
+        } else {
+            log:printInfo("Phase 2: skipped implementor (abstract/interface/enum or unresolvable)",
+                interfaceFqn = interfaceFqn, implName = implName,
+                resolved = implClass is ClassInfo);
+        }
+    }
+
+    log:printInfo("Interface implementor discovery complete",
+        interfaceFqn = interfaceFqn, totalFound = impls.length());
+    return impls;
 }

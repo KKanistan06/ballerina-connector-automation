@@ -109,21 +109,18 @@ function parseCommandLineArgs(string[] args) returns AnalyzerConfig {
                 config.includeNonPublic = true;
             }
             "--sources" => {
-                // Next arg is the path to sources (if present)
                 if i + 1 < args.length() {
                     config.sourcesPath = args[i + 1];
                     i = i + 1;
                 }
             }
             "--javadoc" => {
-                // Next arg is the path to javadoc JAR (if present)
                 if i + 1 < args.length() {
                     config.javadocPath = args[i + 1];
                     i = i + 1;
                 }
             }
             _ => {
-                // Handle key=value pairs and --sources=path style
                 if arg.includes("=") {
                     string[] parts = regex:split(arg, "=");
                     if parts.length() == 2 {
@@ -168,7 +165,6 @@ function parseCommandLineArgs(string[] args) returns AnalyzerConfig {
                                 }
                             }
                             _ => {
-                                // Ignore unknown key=value pairs for forward compatibility.
                             }
                         }
                     }

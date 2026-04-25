@@ -1,42 +1,13 @@
-import ballerina/ai;
+import wso2/connector_automation.utils;
+
 import ballerina/file;
 import ballerina/io;
 import ballerina/lang.regexp;
-import ballerina/os;
-import ballerinax/ai.anthropic;
-
-ai:ModelProvider? docModel = ();
-configurable string docApiKey = "";
 
 const string TEMPLATES_PATH = "./modules/document_generator/templates";
 
 public function initDocumentationGenerator() returns error? {
-    if docModel !is () {
-        return;
-    }
-
-    string resolvedApiKey = docApiKey.trim();
-    if resolvedApiKey.length() == 0 {
-        string? envApiKey = os:getEnv("ANTHROPIC_API_KEY");
-        if envApiKey is string {
-            resolvedApiKey = envApiKey.trim();
-        }
-    }
-
-    if resolvedApiKey.length() == 0 {
-        return error("ANTHROPIC_API_KEY not configured");
-    }
-
-    ai:ModelProvider|error modelProvider = new anthropic:ModelProvider(
-        resolvedApiKey,
-        anthropic:CLAUDE_SONNET_4_20250514,
-        maxTokens = 64000,
-        timeout = 400
-    );
-    if modelProvider is error {
-        return error("Failed to initialize documentation model provider", modelProvider);
-    }
-    docModel = modelProvider;
+    return utils:initAIService(quietMode = true);
 }
 
 public function generateAllDocumentation(string connectorPath) returns error? {
@@ -83,10 +54,7 @@ public function generateTestsReadme(string connectorPath) returns error? {
 
     string content = check processTemplate("tests_readme_template.md", data);
 
-    string outputPath = connectorPath + "/tests/README.md";
-    if !check file:test(connectorPath + "/tests", file:EXISTS) {
-        outputPath = connectorPath + "/ballerina/tests/README.md";
-    }
+    string outputPath = connectorPath + "/ballerina/tests/README.md";
 
     string? parentPath = check file:parentPath(outputPath);
     if parentPath is string {
@@ -280,23 +248,7 @@ function generateMainContent(ConnectorMetadata metadata) returns map<string>|err
 }
 
 function callAI(string prompt) returns string|error {
-    ai:ModelProvider? model = docModel;
-    if model is () {
-        return error("AI model not initialized. Please call initDocumentationGenerator() first.");
-    }
-
-    ai:ChatMessage[] messages = [{role: "user", content: prompt}];
-    ai:ChatAssistantMessage|error response = model->chat(messages);
-    if response is error {
-        return error("AI generation failed: " + response.message());
-    }
-
-    string? content = response.content;
-    if content is string {
-        return content;
-    }
-
-    return error("AI response content is empty.");
+    return utils:callAI(prompt);
 }
 
 function ensureDirectoryExists(string dirPath) returns error? {

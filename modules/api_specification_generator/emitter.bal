@@ -20,11 +20,11 @@ import ballerina/os;
 # Write the Ballerina specification source to a .bal file.
 #
 # + code - Ballerina source code string
-# + outputDir - Target directory (unused; spec always writes to modules/api_specification_generator/spec-output/)
+# + outputDir - Output root directory
 # + fileName - Target file name (e.g. "sqs_spec.bal")
 # + return - Full path of the written file or error
 public function writeBallerinaSpec(string code, string outputDir, string fileName) returns string|error {
-    string specOutputDir = "modules/api_specification_generator/spec-output";
+    string specOutputDir = resolveSpecOutputDir(outputDir);
     boolean dirExists = check file:test(specOutputDir, file:EXISTS);
     if !dirExists {
         check file:createDir(specOutputDir, file:RECURSIVE);
@@ -55,11 +55,11 @@ public function writeIRFile(string content, string outputDir, string fileName) r
 # Write a JSON value directly to a file (used for the IR JSON reference file).
 #
 # + irJson - JSON value to write
-# + outputDir - Target directory (unused; IR always writes to modules/api_specification_generator/IR-output/)
+# + outputDir - Output root directory
 # + fileName - Target file name (e.g. "sqsclient-ir.json")
 # + return - Full path of the written file or error
 public function writeIRJsonFile(json irJson, string outputDir, string fileName) returns string|error {
-    string irOutputDir = "modules/api_specification_generator/IR-output";
+    string irOutputDir = resolveIrOutputDir(outputDir);
     boolean dirExists = check file:test(irOutputDir, file:EXISTS);
     if !dirExists {
         check file:createDir(irOutputDir, file:RECURSIVE);
@@ -68,6 +68,22 @@ public function writeIRJsonFile(json irJson, string outputDir, string fileName) 
     string filePath = string `${irOutputDir}/${fileName}`;
     check io:fileWriteJson(filePath, irJson);
     return filePath;
+}
+
+function resolveSpecOutputDir(string outputDir) returns string {
+    string normalized = outputDir.trim();
+    if normalized.length() == 0 {
+        return "modules/api_specification_generator/spec-output";
+    }
+    return normalized;
+}
+
+function resolveIrOutputDir(string outputDir) returns string {
+    string normalized = outputDir.trim();
+    if normalized.length() == 0 {
+        return "modules/api_specification_generator/IR-output";
+    }
+    return normalized;
 }
 
 # Run `bal format` on a Ballerina source file for final cleanup.

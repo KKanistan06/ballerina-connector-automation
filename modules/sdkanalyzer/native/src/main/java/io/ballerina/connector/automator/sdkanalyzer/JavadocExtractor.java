@@ -1,17 +1,17 @@
 package io.ballerina.connector.automator.sdkanalyzer;
 
+import java.io.File;
+import java.io.InputStream;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-
-import java.io.InputStream;
-import java.io.File;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Enumeration;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 
 /**
  * Simple Javadoc HTML extractor that builds a map of
@@ -53,9 +53,8 @@ public class JavadocExtractor {
                         if (member == null || member.isEmpty() || desc == null) return;
                         String trimmed = desc.trim();
                         if (trimmed.length() == 0) return;
-                        // Keep only first line / short sentence for brevity
                         int dot = trimmed.indexOf('.');
-                        if (dot > 30) dot = -1; // prefer longer first sentence if short
+                        if (dot > 30) dot = -1;
                         String shortDesc = (dot > 0) ? trimmed.substring(0, dot + 1).trim() : trimmed.split("\\n")[0].trim();
                         members.put(member, shortDesc);
                     };
@@ -81,8 +80,6 @@ public class JavadocExtractor {
                             String memberName = null;
                             String desc = null;
 
-                            // Modern javadoc structure: <td class="colFirst">, <th class="colSecond">, <td class="colLast">
-                            // The method name is in the <th> element with class colSecond
                             Element colSecond = row.selectFirst("th.colSecond");
                             Element colLast = row.selectFirst("td.colLast");
 
@@ -106,13 +103,11 @@ public class JavadocExtractor {
                                 Element block = colLast.selectFirst("div.block");
                                 desc = (block != null) ? block.text() : colLast.text();
                             } else {
-                                // Fallback to old structure: all <td> cells
                                 Elements cols = row.select("td");
                                 if (cols.size() >= 2) {
                                     Element nameCol = cols.get(0);
                                     Element descCol = cols.get(1);
 
-                                    // Try to extract the member name from <code> or <a>
                                     Element codeEl = nameCol.selectFirst("code");
                                     if (codeEl != null) {
                                         String codeText = codeEl.text();
@@ -140,7 +135,6 @@ public class JavadocExtractor {
                     }
 
                     if (!members.isEmpty()) {
-                        // also add a dollar-variant for inner classes: replace last '.' with '$'
                         index.put(classFqnDot, members);
                         int lastDot = classFqnDot.lastIndexOf('.');
                         if (lastDot > 0) {
@@ -153,11 +147,9 @@ public class JavadocExtractor {
                     }
 
                 } catch (Exception e) {
-                    // ignore malformed pages
                 }
             }
         } catch (Exception e) {
-            // On failure return whatever we parsed so far
             return index;
         }
 
@@ -179,7 +171,6 @@ public class JavadocExtractor {
             return index;
         }
 
-        // Normalize class names for lookup (both dot and dollar variants)
         java.util.Set<String> normalizedNames = new java.util.HashSet<>();
         for (String cn : classNames) {
             normalizedNames.add(cn);
@@ -194,13 +185,10 @@ public class JavadocExtractor {
                 JarEntry entry = entries.nextElement();
                 String name = entry.getName();
                 if (!name.endsWith(".html")) continue;
-                // skip package-summary and index pages
                 if (name.endsWith("package-summary.html") || name.endsWith("index.html")) continue;
 
-                // Compute the class name from the HTML filename
                 String classFqnDot = name.replace('/', '.').replaceAll("\\.html$", "");
                 
-                // Check if this class is in our target set (considering variants)
                 boolean isTarget = false;
                 for (String target : normalizedNames) {
                     if (classFqnDot.equals(target) || classFqnDot.equals(target.replace('$', '.')) || classFqnDot.equals(target.replace('.', '$'))) {
@@ -219,15 +207,13 @@ public class JavadocExtractor {
                     // Helper to record a member description
                     java.util.function.BiConsumer<String, String> record = (member, desc) -> {
                         if (member == null || member.isEmpty() || desc == null) return;
-                        // If memberNames is specified and non-empty, filter to only those members
                         if (memberNames != null && !memberNames.isEmpty() && !memberNames.contains(member)) {
                             return;
                         }
                         String trimmed = desc.trim();
                         if (trimmed.length() == 0) return;
-                        // Keep only first line / short sentence for brevity
                         int dot = trimmed.indexOf('.');
-                        if (dot > 30) dot = -1; // prefer longer first sentence if short
+                        if (dot > 30) dot = -1;
                         String shortDesc = (dot > 0) ? trimmed.substring(0, dot + 1).trim() : trimmed.split("\\n")[0].trim();
                         members.put(member, shortDesc);
                     };
@@ -253,13 +239,10 @@ public class JavadocExtractor {
                             String memberName = null;
                             String desc = null;
 
-                            // Modern javadoc structure: <td class="colFirst">, <th class="colSecond">, <td class="colLast">
-                            // The method name is in the <th> element with class colSecond
                             Element colSecond = row.selectFirst("th.colSecond");
                             Element colLast = row.selectFirst("td.colLast");
 
                             if (colSecond != null && colLast != null) {
-                                // Extract method name from colSecond
                                 Element memberLink = colSecond.selectFirst(".memberNameLink a");
                                 if (memberLink != null) {
                                     String linkText = memberLink.text();
@@ -278,13 +261,11 @@ public class JavadocExtractor {
                                 Element block = colLast.selectFirst("div.block");
                                 desc = (block != null) ? block.text() : colLast.text();
                             } else {
-                                // Fallback to old structure: all <td> cells
                                 Elements cols = row.select("td");
                                 if (cols.size() >= 2) {
                                     Element nameCol = cols.get(0);
                                     Element descCol = cols.get(1);
 
-                                    // Try to extract the member name from <code> or <a>
                                     Element codeEl = nameCol.selectFirst("code");
                                     if (codeEl != null) {
                                         String codeText = codeEl.text();
@@ -312,7 +293,6 @@ public class JavadocExtractor {
                     }
 
                     if (!members.isEmpty()) {
-                        // also add a dollar-variant for inner classes: replace last '.' with '$'
                         index.put(classFqnDot, members);
                         int lastDot = classFqnDot.lastIndexOf('.');
                         if (lastDot > 0) {
@@ -325,11 +305,9 @@ public class JavadocExtractor {
                     }
 
                 } catch (Exception e) {
-                    // ignore malformed pages
                 }
             }
         } catch (Exception e) {
-            // On failure return whatever we parsed so far
             return index;
         }
 

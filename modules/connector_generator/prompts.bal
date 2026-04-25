@@ -204,11 +204,15 @@ G3. nativeAdaptorJava
     - When creating primitive-typed arrays, import and use
         io.ballerina.runtime.api.types.PredefinedTypes
         (NOT io.ballerina.runtime.api.PredefinedTypes).
-    - Avoid repeated broad catch blocks in each operation. Prefer a generic helper pattern such as
+    - Avoid repeated broad catch blocks in each operation. Use a centralized helper:
         return withErrorHandling("opName", () -> { ... });
-      where the helper contains either specific multi-catch clauses or a single centralized fallback catch.
-      Generated operation methods should not each use catch (Exception e) unless no deterministic typed
-      alternative exists.
+      The helper must catch SDK-specific exceptions first, then end with catch (Exception e) as the
+      mandatory final clause — SDK operations often declare checked exceptions that cause an
+      "unreported exception" compile error without it.
+    - All exception types used in withErrorHandling catch clauses MUST be imported at the top of the
+      file. Never use fully-qualified class names inline (e.g., do NOT write
+      catch (software.amazon.awssdk.core.exception.SdkClientException e) — instead import the class
+      and write catch (SdkClientException e)).
 
 G4. Consistency
     - methodMappings.specMethod set must equal client remote method set.
@@ -264,11 +268,13 @@ G5f. Error construction with cause
                   ...
           } catch (FirstExceptionType | SecondExceptionType e) {
               return createError("operation failed: " + e.getMessage(), e);
+          } catch (Exception e) {
+              return createError("operation failed: " + e.getMessage(), e);
           }
       rather than separate catch blocks with identical bodies.
     - Do not emit per-method catch (Exception e) blocks in generated operation bodies.
-      Prefer either specific multi-catch clauses for known conversion/SDK failures or
-      a single centralized helper that performs fallback exception wrapping.
+      Use the centralized withErrorHandling helper instead, which already has catch (Exception e)
+      as its final clause to cover any uncaught checked exceptions.
 
 G5g. clientBal external function declarations
     - The init external function passes the Ballerina client object (self) as first param:

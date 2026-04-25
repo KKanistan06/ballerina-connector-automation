@@ -339,15 +339,11 @@ Return JSON array only: [{"field":"fieldName","required":true/false,"reason":"br
 }
 
 # System prompt for connection field LLM enrichment.
-# All builder setter fields are sent through this enrichment pass so the LLM
-# supplies consistent descriptions, required/optional flags, type corrections,
-# and — critically — synthetic type metadata (enumValues / subFields) for
-# types that could not be resolved from the available dependency JARs.
 #
 # + return - System prompt for enriching connection fields
 public function getConnectionFieldEnrichmentSystemPrompt() returns string {
-    return "You are an expert Java SDK analyzer with deep knowledge of AWS SDK v2, GCP SDK, Azure SDK, " +
-        "and other major Java SDKs.\n\n" +
+    return "You are an expert Java SDK analyzer with broad knowledge of Java SDK design patterns " +
+        "across many vendors and ecosystems.\n\n" +
         "You will receive a list of builder/factory configuration fields extracted from a Java SDK client. " +
         "For EACH field produce a JSON object with EXACTLY these keys:\n\n" +
         "  name          (string)        — exact field name as given\n" +
@@ -355,19 +351,18 @@ public function getConnectionFieldEnrichmentSystemPrompt() returns string {
         "  isRequired    (boolean)       — true if essential for a basic connection, false otherwise\n" +
         "  ballerinaType (string)        — one of: string | int | boolean | enum | record | object | uri\n" +
         "  enumValues    (string[]|null) — for ballerinaType==\"enum\" ONLY: 3-8 representative constant " +
-        "names (e.g. [\"US_EAST_1\",\"EU_WEST_1\"]). Omit UNKNOWN_TO_SDK_VERSION. null for all other types.\n" +
+        "names. Omit SDK-internal sentinel values (UNKNOWN, UNRECOGNIZED, etc.). null for all other types.\n" +
         "  subFields     (object[]|null) — for ballerinaType==\"record\" ONLY: 2-6 key sub-fields as " +
         "[{\"name\":\"x\",\"type\":\"string\",\"description\":\"...\",\"isRequired\":false}]. null for all other types.\n\n" +
         "RULES:\n" +
-        "- Use your SDK knowledge for well-known types: Region, AwsCredentialsProvider, RetryPolicy, " +
-        "  SdkHttpClient, ProxyConfiguration, Duration, URI, EndpointProvider, etc.\n" +
-        "- For unknown types, infer from the field name and typeContext provided.\n" +
+        "- Use your knowledge of common SDK configuration patterns: endpoint, region, credentials,\n" +
+        "  httpClient, retryPolicy, timeout, proxyConfig, transport, applicationName, etc.\n" +
+        "- Infer the field purpose from the field name, Java type, and any provided typeContext.\n" +
+        "- Do not assume any specific vendor or cloud provider — be accurate for whichever SDK is provided.\n" +
         "- Return ONLY a valid JSON array — no markdown fences, no commentary.";
 }
 
 # User prompt for connection field LLM enrichment.
-# Builds a compact structured prompt for a single batched LLM call covering ALL
-# connection fields collected from the builder hierarchy.
 #
 # + sdkPackage - Root package of the SDK (e.g. software.amazon.awssdk.services.sqs)
 # + clientSimpleName - Simple name of the root client class (e.g. SqsClient)
@@ -405,15 +400,15 @@ public function getConnectionFieldEnrichmentUserPrompt(
     string footer =
         "Return a JSON array — one object per field IN THE SAME ORDER.\n" +
         "Required keys per object: name, description, isRequired, ballerinaType, enumValues, subFields.\n\n" +
-        "Enum example:\n" +
-        "{\"name\":\"region\",\"description\":\"AWS region for the service endpoint.\",\"isRequired\":true," +
-        "\"ballerinaType\":\"enum\",\"enumValues\":[\"US_EAST_1\",\"US_WEST_2\",\"EU_WEST_1\",\"AP_SOUTHEAST_1\"]," +
+        "Enum example (a geographic region selector — adapt values to the actual SDK):\n" +
+        "{\"name\":\"region\",\"description\":\"Geographic region for the service endpoint.\",\"isRequired\":true," +
+        "\"ballerinaType\":\"enum\",\"enumValues\":[\"US_EAST\",\"EU_WEST\",\"AP_SOUTHEAST\",\"US_WEST\"]," +
         "\"subFields\":null}\n\n" +
-        "Record example:\n" +
-        "{\"name\":\"credentialsProvider\",\"description\":\"Provides AWS credentials for request signing.\"," +
+        "Record example (a credential configuration — adapt field names to the actual SDK):\n" +
+        "{\"name\":\"credentials\",\"description\":\"Credentials used to authenticate requests.\"," +
         "\"isRequired\":false,\"ballerinaType\":\"record\",\"enumValues\":null,\"subFields\":[" +
-        "{\"name\":\"accessKeyId\",\"type\":\"string\",\"description\":\"AWS access key ID.\",\"isRequired\":true}," +
-        "{\"name\":\"secretAccessKey\",\"type\":\"string\",\"description\":\"AWS secret access key.\",\"isRequired\":true}]}\n\n" +
+        "{\"name\":\"clientId\",\"type\":\"string\",\"description\":\"Client identifier.\",\"isRequired\":true}," +
+        "{\"name\":\"clientSecret\",\"type\":\"string\",\"description\":\"Client secret or key.\",\"isRequired\":true}]}\n\n" +
         "Return ONLY the JSON array.";
 
     return header + body + footer;

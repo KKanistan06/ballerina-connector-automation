@@ -30,12 +30,9 @@ public function resolveRequestClassFromParameter(ParameterInfo param, ClassInfo[
         candidates.push(param.typeName);
     }
 
-    // For each candidate type name, generate normalized forms to try to match
-    // known Request/Response types.
     foreach string raw in candidates {
         string[] normCandidates = normalizeCandidateTypeNames(raw);
         foreach string cand in normCandidates {
-            // Prefer explicit Request/Response names, but allow matching by simple name
             if cand.endsWith("Request") || cand.endsWith("Response") {
                 ClassInfo? found = findClassByName(cand, allClasses);
                 if found is ClassInfo {
@@ -45,7 +42,6 @@ public function resolveRequestClassFromParameter(ParameterInfo param, ClassInfo[
         }
     }
 
-    // If any candidate directly matches a class, return it (non-Request too)
     foreach string raw in candidates {
         ClassInfo? found = findClassByName(raw, allClasses);
         if found is ClassInfo {
@@ -53,13 +49,10 @@ public function resolveRequestClassFromParameter(ParameterInfo param, ClassInfo[
         }
     }
 
-    // If no generics were present or matched, and the parameter type is a
-    // common wrapper, try to derive a request type
     if candidates.length() == 1 {
         string rawOnly = candidates[0];
         string lower = rawOnly.toLowerAscii();
         if lower.includes("consumer") || lower.includes("function") || lower.includes("supplier") {
-            // Generate PascalCase method name
             string pascal = methodName.substring(0, 1).toUpperAscii() + methodName.substring(1);
             string guess = pascal + "Request";
             ClassInfo? guessCls = findClassByName(guess, allClasses);
@@ -92,7 +85,6 @@ public function normalizeCandidateTypeNames(string raw) returns string[] {
         out.push(withoutGenerics);
     }
 
-    // Add original raw
     out.push(raw);
 
     if raw.endsWith(".Builder") {
@@ -109,7 +101,6 @@ public function normalizeCandidateTypeNames(string raw) returns string[] {
         out.push(stripped);
     }
 
-    // If contains '$' (inner class), also try replacing with '.' and stripping suffixes
     if raw.includes("$") {
         string dotForm = regex:replace(raw, "\\$", ".");
         out.push(dotForm);
@@ -119,7 +110,6 @@ public function normalizeCandidateTypeNames(string raw) returns string[] {
         }
     }
 
-    // Also add simple name candidate (strip package)
     string[] parts = regex:split(raw, "\\.");
     if parts.length() > 0 {
         string simple = parts[parts.length() - 1];
@@ -130,7 +120,6 @@ public function normalizeCandidateTypeNames(string raw) returns string[] {
         }
     }
 
-    // Remove duplicates while preserving order
     string[] uniq = [];
     foreach string s in out {
         if s == "" {
@@ -167,24 +156,24 @@ public function findClassByName(string className, ClassInfo[] allClasses) return
 # + return - List of request field information
 public function extractRequestFields(ClassInfo requestClass) returns RequestFieldInfo[] {
     RequestFieldInfo[] requestFields = [];
+    map<boolean> addedFields = {};
 
     foreach MethodInfo method in requestClass.methods {
         if method.parameters.length() == 0 && method.returnType != "void" &&
             method.name != "toString" && method.name != "hashCode" &&
             method.name != "equals" && method.name != "getClass" {
 
-            // Filter out unwanted utility methods
             if shouldFilterField(method.name, method.returnType) {
                 continue;
             }
 
-            string fieldName = method.name;
-            if fieldName.length() > 0 {
-                string firstChar = fieldName.substring(0, 1).toLowerAscii();
-                fieldName = firstChar + fieldName.substring(1);
-            }
+            string fieldName = deriveFieldName(method.name);
 
-            // Extract simple type name from fully qualified type
+            if addedFields.hasKey(fieldName) {
+                continue;
+            }
+            addedFields[fieldName] = true;
+
             string simpleTypeName = extractSimpleTypeName(method.returnType);
 
             RequestFieldInfo fieldInfo = {
@@ -194,7 +183,6 @@ public function extractRequestFields(ClassInfo requestClass) returns RequestFiel
                 isRequired: false
             };
 
-            // Attach method-level javadoc/description if present
             if method.description != () {
                 fieldInfo.description = method.description;
             }
@@ -211,23 +199,28 @@ public function extractRequestFields(ClassInfo requestClass) returns RequestFiel
 # + responseClass - The Response class to analyze
 # + return - List of response field information
 public function extractResponseFields(ClassInfo responseClass) returns RequestFieldInfo[] {
-    // Reuse the same approach as request extraction: methods with no parameters
     RequestFieldInfo[] responseFields = [];
+    map<boolean> addedFields = {};
 
     foreach MethodInfo method in responseClass.methods {
         if method.parameters.length() == 0 && method.returnType != "void" &&
             method.name != "toString" && method.name != "hashCode" &&
             method.name != "equals" && method.name != "getClass" {
 
+            if method.isStatic {
+                continue;
+            }
+
             if shouldFilterField(method.name, method.returnType) {
                 continue;
             }
 
-            string fieldName = method.name;
-            if fieldName.length() > 0 {
-                string firstChar = fieldName.substring(0, 1).toLowerAscii();
-                fieldName = firstChar + fieldName.substring(1);
+            string fieldName = deriveFieldName(method.name);
+
+            if addedFields.hasKey(fieldName) {
+                continue;
             }
+            addedFields[fieldName] = true;
 
             string simpleTypeName = extractSimpleTypeName(method.returnType);
 
@@ -238,7 +231,6 @@ public function extractResponseFields(ClassInfo responseClass) returns RequestFi
                 isRequired: false
             };
 
-            // Attach method-level javadoc/description if present
             if method.description != () {
                 fieldInfo.description = method.description;
             }
@@ -261,13 +253,23 @@ function shouldFilterField(string fieldName, string fieldType) returns boolean {
         return true;
     }
 
-    // Filter specific utility methods and SDK-internal fields
+    if fieldName == "type" && fieldType.indexOf("$") != -1 && fieldType.endsWith("$Type") {
+        return true;
+    }
+
     string[] filteredNames = [
         "toBuilder",
         "builder",
         "serializableBuilderClass",
         "sdkFields",
-        "sdkFieldNameToField"
+        "sdkFieldNameToField",
+        "defaultProvider",
+        "create",
+        "copy",
+        "clone",
+        "getClassInfo",
+        "getUnknownKeys",
+        "getFactory"
     ];
 
     foreach string name in filteredNames {
@@ -276,37 +278,64 @@ function shouldFilterField(string fieldName, string fieldType) returns boolean {
         }
     }
 
-    // Filter fields that start with "sdk" (SDK-internal fields)
     if fieldName.startsWith("sdk") {
         return true;
     }
 
-    // Filter has* checker methods (hasAttributes, hasTags, etc.)
     if fieldName.startsWith("has") && fieldName.length() > 3 {
         string afterHas = fieldName.substring(3, 4);
-        // Check if the 4th character is uppercase (e.g., hasAttributes)
         if afterHas == afterHas.toUpperAscii() {
             return true;
         }
     }
 
-    // Filter java.lang.Class type
-    if fieldType == "java.lang.Class" {
+    string simpleType = extractSimpleTypeName(fieldType);
+
+    if fieldType == "java.lang.Class" || simpleType == "Class" || simpleType == "CompletableFuture" ||
+        simpleType == "Supplier" || simpleType == "Consumer" || simpleType == "Function" ||
+        simpleType == "Predicate" {
         return true;
     }
 
-    // Filter types containing SdkField (SDK-internal metadata)
     if fieldType.includes("SdkField") {
         return true;
     }
 
-    // Filter types containing SdkBytes-related internal fields
-    if fieldType.includes("software.amazon.awssdk.core.") && !fieldType.includes("SdkBytes") {
-        // Allow SdkBytes but filter other SDK core types
+    if fieldType.includes(".crt.") {
+        return true;
+    }
+
+    if fieldType.includes(".internal.") || fieldType.includes(".impl.") {
         return true;
     }
 
     return false;
+}
+
+# Derive a field name from a method name.
+#
+# + methodName - The zero-arg method name
+# + return - Derived camelCase field name
+function deriveFieldName(string methodName) returns string {
+    string name = methodName;
+    if name.startsWith("get") && name.length() > 3 {
+        string afterGet = name.substring(3, 4);
+        if afterGet == afterGet.toUpperAscii() {
+            name = name.substring(3);
+        }
+    }
+    else if name.startsWith("is") && name.length() > 2 {
+        string afterIs = name.substring(2, 3);
+        if afterIs == afterIs.toUpperAscii() {
+            name = name.substring(2);
+        }
+    }
+    // Lowercase the first character
+    if name.length() > 0 {
+        string firstChar = name.substring(0, 1).toLowerAscii();
+        name = firstChar + name.substring(1);
+    }
+    return name;
 }
 
 # Extract simple type name from fully qualified name
@@ -318,7 +347,6 @@ function extractSimpleTypeName(string fullTypeName) returns string {
         return "";
     }
 
-    // Handle generic types - extract the base type before the angle bracket
     string baseType = fullTypeName;
     int? angleBracket = fullTypeName.indexOf("<");
     if angleBracket is int && angleBracket >= 0 {
@@ -347,32 +375,86 @@ public function extractGenericTypeParameter(string fullTypeName) returns string?
 
     if openBracket is int && closeBracket is int && openBracket < closeBracket {
         string genericPart = fullTypeName.substring(openBracket + 1, closeBracket);
+        string[] args = splitTopLevelGenericArgs(genericPart);
 
-        // For Map types like Map<K, V>, extract the value type (second parameter)
-        if genericPart.includes(",") {
-            string[] parts = regex:split(genericPart, ",");
-            if parts.length() >= 2 {
-                // Return the value type (second type parameter), trimmed
-                return parts[1].trim();
-            }
+        if args.length() >= 2 {
+            return sanitizeGenericTypeArg(args[1]);
         }
 
-        // For single parameter generics like List<T> or Collection<T>
-        return genericPart.trim();
+        if args.length() == 1 {
+            return sanitizeGenericTypeArg(args[0]);
+        }
     }
 
     return ();
 }
 
-# Check if a type is a collection type (List, Set, Collection, Map, etc.)
+function splitTopLevelGenericArgs(string genericPart) returns string[] {
+    string[] args = [];
+    int depth = 0;
+    int segmentStart = 0;
+    int length = genericPart.length();
+
+    foreach int i in 0 ..< length {
+        string ch = genericPart.substring(i, i + 1);
+        if ch == "<" {
+            depth += 1;
+        } else if ch == ">" {
+            if depth > 0 {
+                depth -= 1;
+            }
+        } else if ch == "," && depth == 0 {
+            args.push(genericPart.substring(segmentStart, i).trim());
+            segmentStart = i + 1;
+        }
+    }
+
+    if segmentStart < length {
+        args.push(genericPart.substring(segmentStart, length).trim());
+    }
+
+    return args;
+}
+
+function sanitizeGenericTypeArg(string rawArg) returns string {
+    string value = rawArg.trim();
+
+    if value.startsWith("? extends ") {
+        value = value.substring(10).trim();
+    } else if value.startsWith("? super ") {
+        value = value.substring(8).trim();
+    } else if value == "?" {
+        return "";
+    }
+
+    int? nestedStart = value.indexOf("<");
+    if nestedStart is int && nestedStart > 0 {
+        value = value.substring(0, nestedStart);
+    }
+
+    if value.endsWith("[]") && value.length() > 2 {
+        value = value.substring(0, value.length() - 2);
+    }
+
+    return value.trim();
+}
+
+# Check if a type is a collection type
 #
 # + typeName - Simple or full type name
 # + return - true if the type is a collection type
 public function isCollectionType(string typeName) returns boolean {
-    string lower = typeName.toLowerAscii();
-    string[] collectionTypes = ["list", "set", "collection", "map", "arraylist", "hashset", "hashmap", "linkedlist", "treeset", "treemap"];
+    string simple = extractSimpleTypeName(typeName).toLowerAscii();
+    string[] collectionTypes = [
+        "list", "set", "collection", "map",
+        "arraylist", "hashset", "hashmap",
+        "linkedlist", "treeset", "treemap",
+        "linkedhashset", "linkedhashmap",
+        "sortedset", "sortedmap",
+        "concurrenthashmap", "copyonwritearraylist"
+    ];
     foreach string ct in collectionTypes {
-        if lower.includes(ct) {
+        if simple == ct {
             return true;
         }
     }
@@ -393,9 +475,7 @@ public function extractEnhancedParameters(ParameterInfo[] parameters, ClassInfo[
         ClassInfo? resolved = resolveRequestClassFromParameter(param, allClasses, methodName);
         if resolved is ClassInfo {
             RequestFieldInfo[] requestFields = extractRequestFields(resolved);
-            // Merge with any native-provided requestFields present on the param (preserve descriptions)
             RequestFieldInfo[] merged = [];
-            // Build a lookup from provided param.requestFields for quick description fallback
             map<string> providedDesc = {};
             if param.requestFields is RequestFieldInfo[] {
                 RequestFieldInfo[] provided = <RequestFieldInfo[]>param.requestFields;
@@ -452,8 +532,6 @@ public function extractEnumMetadata(ClassInfo enumClass) returns EnumMetadata {
     string[] values = [];
     boolean hasFromValueMethod = hasStringFromValueMethod(enumClass);
 
-    // Extract enum constants from static final fields
-    // Collect names in declaration order
     foreach FieldInfo fieldInfo in enumClass.fields {
         if fieldInfo.isStatic && fieldInfo.isFinal && isSelfTypedField(fieldInfo, enumClass) {
             string enumValue = fieldInfo.name;
@@ -577,7 +655,6 @@ public function addRequestFieldDescriptions(RequestFieldInfo[] fields) returns R
         return fields;
     }
 
-    // Identify fields that need descriptions (don't have javadoc descriptions)
     RequestFieldInfo[] needsDescription = [];
     int[] needsDescriptionIndices = [];
     foreach int i in 0 ..< fields.length() {
@@ -587,17 +664,14 @@ public function addRequestFieldDescriptions(RequestFieldInfo[] fields) returns R
         }
     }
 
-    // If all fields have descriptions, return as-is
     if needsDescription.length() == 0 {
         return fields;
     }
 
-    // If LLM not configured, return fields as-is
     if !isAnthropicConfigured() {
         return fields;
     }
 
-    // Build field list for LLM (only fields needing descriptions)
     string fieldList = "";
     foreach int i in 0 ..< needsDescription.length() {
         RequestFieldInfo f = needsDescription[i];
@@ -620,7 +694,6 @@ public function addRequestFieldDescriptions(RequestFieldInfo[] fields) returns R
             string[] descriptions = regex:split(responseText, "\n");
             descriptions = descriptions.map(d => d.trim()).filter(d => d.length() > 0);
 
-            // Apply LLM descriptions only to fields that needed them
             RequestFieldInfo[] result = fields.clone();
             foreach int i in 0 ..< needsDescriptionIndices.length() {
                 if i < descriptions.length() {
@@ -632,6 +705,5 @@ public function addRequestFieldDescriptions(RequestFieldInfo[] fields) returns R
         }
     }
 
-    // Return fields without descriptions if LLM call fails
     return fields;
 }

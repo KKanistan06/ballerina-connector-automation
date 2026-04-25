@@ -16,6 +16,8 @@
 import ballerina/http;
 import ballerina/os;
 
+import wso2/connector_automation.utils;
+
 # Check whether the Anthropic API key is configured.
 #
 # + return - true if the ANTHROPIC_API_KEY env variable is set
@@ -99,6 +101,23 @@ function callAnthropicAPI(AnthropicConfig config, string systemPrompt, string us
 
     json responseBody = check response.getJsonPayload();
 
+    json|error usageJson = responseBody.usage;
+    if usageJson is json {
+        int inputCount = 0;
+        int outputCount = 0;
+        json|error inputJson = usageJson.input_tokens;
+        json|error outputJson = usageJson.output_tokens;
+        if inputJson is json {
+            int|error parsed = int:fromString(inputJson.toString());
+            if parsed is int { inputCount = parsed; }
+        }
+        if outputJson is json {
+            int|error parsed = int:fromString(outputJson.toString());
+            if parsed is int { outputCount = parsed; }
+        }
+        utils:recordTokenUsage(inputCount, outputCount);
+    }
+
     // Check if the response was truncated due to token limits
     json|error stopReason = responseBody.stop_reason;
     if stopReason is json && stopReason.toString() == "max_tokens" {
@@ -110,8 +129,6 @@ function callAnthropicAPI(AnthropicConfig config, string systemPrompt, string us
 }
 
 # Extract the text content from an Anthropic API response.
-# Handles the standard response.content[N].text structure including
-# extended-thinking responses where the last text block is the answer.
 #
 # + response - Raw JSON response from the Anthropic API
 # + return - Extracted text content
@@ -119,15 +136,12 @@ public function extractResponseText(json response) returns string {
     json|error contentArray = response.content;
     if contentArray is json && contentArray is json[] {
         json[] contentList = <json[]>contentArray;
-        // Walk backwards to find the last "text" block (skip thinking blocks)
         int idx = contentList.length() - 1;
         while idx >= 0 {
             json block = contentList[idx];
             json|error blockType = block.'type;
             json|error textField = block.text;
             if blockType is json && blockType.toString() == "text" && textField is json {
-                // Use string cast (not toString) to get the raw string value without
-                // JSON re-encoding; fall back to toString() if cast fails.
                 string|error castResult = textField.ensureType(string);
                 string text = castResult is string ? castResult : textField.toString();
                 return text;

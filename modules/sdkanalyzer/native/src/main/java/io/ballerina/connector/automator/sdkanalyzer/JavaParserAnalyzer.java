@@ -4,9 +4,7 @@ package io.ballerina.connector.automator.sdkanalyzer;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -37,9 +35,6 @@ import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.comments.JavadocComment;
-import com.github.javaparser.ast.expr.Expression;
-import com.github.javaparser.ast.expr.NullLiteralExpr;
-import com.github.javaparser.ast.expr.StringLiteralExpr;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 
@@ -83,20 +78,15 @@ public class JavaParserAnalyzer {
         }
     }
 
-    // Helper to find a javadoc map for a given class name. The javadoc index may contain
-    // variants like "...class-use.ClassName" or inner-class dollar variants. Try several
-    // heuristics to locate the most appropriate entry.
     private static Map<String, String> findJavadocMapForClass(String className) {
         if (javadocIndex == null || className == null) return null;
         // Exact match
         Map<String, String> map = javadocIndex.get(className);
         if (map != null) return map;
 
-        // Try dot/dollar variant
         map = javadocIndex.get(className.replace('$', '.'));
         if (map != null) return map;
 
-        // Simple name match: look for keys that end with ".SimpleName" or ".class-use.SimpleName"
         int lastDot = className.lastIndexOf('.');
         String simple = (lastDot >= 0) ? className.substring(lastDot + 1) : className;
 
@@ -104,7 +94,6 @@ public class JavaParserAnalyzer {
             if (key.endsWith("." + simple) || key.endsWith(".class-use." + simple) || key.endsWith("$" + simple) || key.equals(simple)) {
                 return javadocIndex.get(key);
             }
-            // also try contains pattern (fallback)
             if (key.contains("." + simple + "")) {
                 return javadocIndex.get(key);
             }
@@ -119,12 +108,12 @@ public class JavaParserAnalyzer {
      * @param jarPathOrResult JAR path or Maven resolution result
      * @return Parsed class information
      */
+    @SuppressWarnings("unchecked")
     public static Object analyzeJarWithJavaParser(Object jarPathOrResult) {
         try {
             List<File> jarFiles = new ArrayList<>();
             String mainJarPath;
             
-            // Handle input (JAR path or Maven result)
             if (jarPathOrResult instanceof BMap) {
                 BMap<BString, Object> mavenResult = (BMap<BString, Object>) jarPathOrResult;
                 
@@ -167,7 +156,6 @@ public class JavaParserAnalyzer {
             // 2. Extract source files and analyze with JavaParser
             List<BMap<BString, Object>> classes = new ArrayList<>();
 
-            // Check for explicit sourcesPath in the resolution map (if provided)
             String explicitSourcesPath = null;
             String explicitJavadocPath = null;
             if (jarPathOrResult instanceof BMap) {
@@ -186,10 +174,8 @@ public class JavaParserAnalyzer {
 
             logInfo("Parsed " + parsedSources.size() + " source files");
 
-            // Load javadoc from explicit path or auto-discover
             try {
                 if (explicitJavadocPath != null && !explicitJavadocPath.isEmpty()) {
-                    // Use explicitly provided javadoc JAR path
                     File javadocJar = new File(explicitJavadocPath);
                     if (javadocJar.exists()) {
                         logInfo("Loading javadoc from explicit path: " + javadocJar.getAbsolutePath());
@@ -200,13 +186,11 @@ public class JavaParserAnalyzer {
                         System.err.println("WARNING: Explicit javadoc JAR not found: " + explicitJavadocPath);
                     }
                 } else {
-                    // Try to auto-discover javadoc JAR
                     File mainJarFile = new File(mainJarPath);
                     File parent = mainJarFile.getParentFile();
                     if (parent != null && parent.exists()) {
                         File[] candidates = parent.listFiles((dir, name) -> name.toLowerCase().contains("javadoc") && name.endsWith(".jar"));
                         if (candidates == null || candidates.length == 0) {
-                            // No javadoc JAR found
                         } else {
                             File javadocJar = candidates[0];
                             logInfo("Found javadoc jar: " + javadocJar.getAbsolutePath());
@@ -249,6 +233,91 @@ public class JavaParserAnalyzer {
         }
     }
     
+    /**
+     * Find all concrete classes in a set of JAR files that directly implement or extend the
+     * given interface or abstract class.  Uses ASM in metadata-only mode (SKIP_CODE) for speed.
+     *
+     * @param interfaceFqn Fully qualified interface/abstract class name (dot-separated)
+     * @param jarPaths     Array of JAR file paths to search
+     * @return BArray of fully qualified concrete implementing class names (may be empty)
+     */
+    public static Object findImplementorsInJars(BString interfaceFqn, BArray jarPaths) {
+        try {
+            String targetInterface = interfaceFqn.getValue().replace('.', '/');
+            String topPackage = "";
+            int dotIdx = targetInterface.indexOf('/');
+            if (dotIdx > 0) {
+                int secondDot = targetInterface.indexOf('/', dotIdx + 1);
+                if (secondDot > 0) {
+                    topPackage = targetInterface.substring(0, secondDot);
+                } else {
+                    topPackage = targetInterface.substring(0, dotIdx);
+                }
+            }
+
+            List<String> implementors = new ArrayList<>();
+
+            for (int i = 0; i < jarPaths.getLength(); i++) {
+                String jarPath = jarPaths.getBString(i).getValue();
+                File jarFile = new File(jarPath);
+                if (!jarFile.exists()) continue;
+
+                try (JarFile jar = new JarFile(jarFile)) {
+                    Enumeration<JarEntry> entries = jar.entries();
+                    while (entries.hasMoreElements()) {
+                        JarEntry entry = entries.nextElement();
+                        String entryName = entry.getName();
+                        if (!entryName.endsWith(".class")) continue;
+                        if (entryName.contains("$")) continue;
+                        if (!topPackage.isEmpty() && !entryName.startsWith(topPackage)) continue;
+                        String lowerEntry = entryName.toLowerCase(java.util.Locale.ROOT);
+                        if (lowerEntry.contains("/internal/") || lowerEntry.contains("/impl/")) continue;
+
+                        try (InputStream is = jar.getInputStream(entry)) {
+                            ClassReader cr = new ClassReader(is);
+                            final boolean[] matched = {false};
+                            cr.accept(new ClassVisitor(Opcodes.ASM9) {
+                                @Override
+                                public void visit(int version, int access, String name,
+                                        String signature, String superName, String[] interfaces) {
+                                    boolean isAbstract  = (access & Opcodes.ACC_ABSTRACT)  != 0;
+                                    boolean isInterface = (access & Opcodes.ACC_INTERFACE) != 0;
+                                    boolean isEnum      = (access & Opcodes.ACC_ENUM)      != 0;
+                                    boolean isPublic    = (access & Opcodes.ACC_PUBLIC)    != 0;
+                                    if (!isPublic || isAbstract || isInterface || isEnum) return;
+                                    if (interfaces != null) {
+                                        for (String iface : interfaces) {
+                                            if (targetInterface.equals(iface)) {
+                                                matched[0] = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (!matched[0] && targetInterface.equals(superName)) {
+                                        matched[0] = true;
+                                    }
+                                    if (matched[0]) {
+                                        String className = name.replace('/', '.');
+                                        implementors.add(className);
+                                    }
+                                }
+                            }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+                        } catch (Exception ignored) {}
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            BString[] result = implementors.stream()
+                    .map(StringUtils::fromString)
+                    .toArray(BString[]::new);
+            return ValueCreator.createArrayValue(result);
+
+        } catch (Exception e) {
+            System.err.println("WARNING: findImplementorsInJars failed: " + e.getMessage());
+            return ValueCreator.createArrayValue(new BString[0]);
+        }
+    }
+
     /**
      * Resolve a single class from a list of JAR files.
      * This is used for lazy resolution of external dependency classes (e.g., parent builder classes).
@@ -295,10 +364,8 @@ public class JavaParserAnalyzer {
             // Try to find and analyze with ASM
             BMap<BString, Object> result = analyzeWithASM(classNameStr, jarFiles, classInfo);
             
-            // Check if we found the class (it will have methods if found)
             Object methods = result.get(StringUtils.fromString("methods"));
             if (methods instanceof BArray methodsArray) {
-                // If we have at least one method or the class has interfaces/superClass, we found it
                 Object superClass = result.get(StringUtils.fromString("superClass"));
                 Object interfaces = result.get(StringUtils.fromString("interfaces"));
                 if (methodsArray.getLength() > 0 || superClass != null || 
@@ -334,11 +401,22 @@ public class JavaParserAnalyzer {
                 JarEntry entry = entries.nextElement();
                 String entryName = entry.getName();
                 
-                // Process .class files
-                if (entryName.endsWith(".class") && !entryName.contains("$")) {
-                    String className = entryName
-                            .replace('/', '.')
-                            .substring(0, entryName.length() - 6);
+                if (entryName.endsWith(".class")) {
+                    String baseName = entryName.substring(0, entryName.length() - 6); 
+                    boolean isAnonymous = false;
+                    if (baseName.contains("$")) {
+                        String[] segments = baseName.split("\\$");
+                        for (int si = 1; si < segments.length; si++) {
+                            if (!segments[si].isEmpty() && segments[si].chars().allMatch(Character::isDigit)) {
+                                isAnonymous = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (isAnonymous) {
+                        continue;
+                    }
+                    String className = baseName.replace('/', '.');
                     classNames.add(className);
                 }
             }
@@ -487,7 +565,7 @@ public class JavaParserAnalyzer {
             if (candidate.endsWith(".java")) {
                 candidate = candidate.substring(0, candidate.length() - 5);
             }
-            // If package declaration exists, prefer it (handles cases where file is nested differently)
+            // If package declaration exists, prefer it
             if (packageName.isPresent()) {
                 // If candidate already contains package, return it; otherwise combine
                 if (candidate.startsWith(packageName.get())) {
@@ -561,9 +639,6 @@ public class JavaParserAnalyzer {
         
         MapType mapType = TypeCreator.createMapType(PredefinedTypes.TYPE_JSON);
         
-        // Try to locate the relevant top-level type declaration.
-        // Prefer a type whose simple name matches the className argument, fall back to primary type,
-        // then the first top-level type if available.
         String simpleName = className.contains(".") ? className.substring(className.lastIndexOf('.') + 1) : className;
         TypeDeclaration<?> typeDecl = null;
 
@@ -605,18 +680,6 @@ public class JavaParserAnalyzer {
                 fieldInfo.put(StringUtils.fromString("isStatic"), true);
                 fieldInfo.put(StringUtils.fromString("isFinal"), true);
                 fieldInfo.put(StringUtils.fromString("isDeprecated"), enumConst.isAnnotationPresent("Deprecated"));
-
-                String enumLiteralValue = null;
-                if (!enumConst.getArguments().isEmpty()) {
-                    Expression firstArg = enumConst.getArguments().get(0);
-                    if (firstArg instanceof StringLiteralExpr stringLiteralExpr) {
-                        enumLiteralValue = stringLiteralExpr.asString();
-                    } else if (firstArg instanceof NullLiteralExpr) {
-                        enumLiteralValue = null;
-                    }
-                }
-                fieldInfo.put(StringUtils.fromString("literalValue"),
-                        enumLiteralValue == null ? null : StringUtils.fromString(enumLiteralValue));
                 
                 // Javadoc for enum constant
                 Optional<JavadocComment> javadoc = enumConst.getJavadocComment();
@@ -643,6 +706,7 @@ public class JavaParserAnalyzer {
                     TypeCreator.createArrayType(mapType)));
             
             classInfo.put(StringUtils.fromString("superClass"), null);
+            classInfo.put(StringUtils.fromString("genericSuperClass"), StringUtils.fromString(""));
             classInfo.put(StringUtils.fromString("interfaces"), ValueCreator.createArrayValue(new BString[0]));
             
             // Annotations
@@ -670,11 +734,21 @@ public class JavaParserAnalyzer {
                 String superClassName = superclass.get().asString();
                 if (!superClassName.equals("Object")) {
                     classInfo.put(StringUtils.fromString("superClass"), StringUtils.fromString(superClassName));
+                    Type superType = superclass.get();
+                    if (superType.isClassOrInterfaceType() && 
+                        superType.asClassOrInterfaceType().getTypeArguments().isPresent()) {
+                        classInfo.put(StringUtils.fromString("genericSuperClass"),
+                                StringUtils.fromString(superType.asString()));
+                    } else {
+                        classInfo.put(StringUtils.fromString("genericSuperClass"), StringUtils.fromString(""));
+                    }
                 } else {
                     classInfo.put(StringUtils.fromString("superClass"), null);
+                    classInfo.put(StringUtils.fromString("genericSuperClass"), StringUtils.fromString(""));
                 }
             } else {
                 classInfo.put(StringUtils.fromString("superClass"), null);
+                classInfo.put(StringUtils.fromString("genericSuperClass"), StringUtils.fromString(""));
             }
             
             // Interfaces
@@ -786,13 +860,10 @@ public class JavaParserAnalyzer {
             paramInfo.put(StringUtils.fromString("name"), StringUtils.fromString(param.getNameAsString()));
             paramInfo.put(StringUtils.fromString("type"), StringUtils.fromString(param.getTypeAsString()));
             paramInfo.put(StringUtils.fromString("isVarArgs"), param.isVarArgs());
-                // Extract request fields if this is a Request parameter
                 if (param.getTypeAsString().endsWith("Request")) {
-                    // Try to populate simple request field descriptions from the javadoc index
                     try {
                         Map<String, String> classMap = findJavadocMapForClass(param.getTypeAsString());
                         if (classMap == null) {
-                            // also try builder variant
                             classMap = findJavadocMapForClass(param.getTypeAsString() + ".Builder");
                         }
 
@@ -801,9 +872,7 @@ public class JavaParserAnalyzer {
                             for (Map.Entry<String, String> e : classMap.entrySet()) {
                                 String member = e.getKey();
                                 String desc = e.getValue();
-                                // Skip synthetic-looking entries
                                 if (member == null || member.isBlank()) continue;
-                                // Only include simple member names (no generics/signatures)
                                 if (member.contains("<") || member.contains(" ")) continue;
 
                                 BMap<BString, Object> f = ValueCreator.createMapValue(mapType);
@@ -995,6 +1064,7 @@ public class JavaParserAnalyzer {
         classInfo.put(StringUtils.fromString("isEnum"), false);
         classInfo.put(StringUtils.fromString("isDeprecated"), false);
         classInfo.put(StringUtils.fromString("superClass"), null);
+        classInfo.put(StringUtils.fromString("genericSuperClass"), StringUtils.fromString(""));
         classInfo.put(StringUtils.fromString("interfaces"), ValueCreator.createArrayValue(new BString[0]));
         classInfo.put(StringUtils.fromString("annotations"), ValueCreator.createArrayValue(new BString[0]));
         classInfo.put(StringUtils.fromString("methods"), ValueCreator.createArrayValue(new BMap[0], 
@@ -1014,18 +1084,22 @@ public class JavaParserAnalyzer {
      * @return True if should be included
      */
     private static boolean shouldIncludeClass(String className) {
-        // Skip inner classes
         if (className.contains("$")) {
-            return false;
+            String[] segments = className.split("\\$");
+            for (int si = 1; si < segments.length; si++) {
+                if (!segments[si].isEmpty() && segments[si].chars().allMatch(Character::isDigit)) {
+                    return false;
+                }
+            }
         }
-        
+
         // Skip excluded packages
         for (String excludedPackage : EXCLUDED_PACKAGES) {
             if (className.startsWith(excludedPackage + ".")) {
                 return false;
             }
         }
-        
+
         return true;
     }
     
@@ -1039,20 +1113,12 @@ public class JavaParserAnalyzer {
         private final List<BMap<BString, Object>> methods = new ArrayList<>();
         private final List<BMap<BString, Object>> fields = new ArrayList<>();
         private final List<BMap<BString, Object>> constructors = new ArrayList<>();
-        private final Map<String, String> enumLikeConstantValues = new HashMap<>();
-        private final Map<String, BMap<BString, Object>> enumLikeFieldEntries = new HashMap<>();
         private boolean isEnum = false;
         private String enumClassName = "";
 
-        private static final class EnumLikeConstantValue {
-            private final String value;
-
-            private EnumLikeConstantValue(String value) {
-                this.value = value;
-            }
-        }
-
-        private static final Object UNKNOWN_STACK_VALUE = new Object();
+        private final java.util.LinkedHashMap<String, BMap<BString, Object>> pendingConstantHolderFields
+                = new java.util.LinkedHashMap<>();
+        private final Map<String, String> constantHolderStringValues = new HashMap<>();
         
         public ASMClassAnalyzer(BMap<BString, Object> classInfo, MapType mapType) {
             super(Opcodes.ASM9);
@@ -1082,6 +1148,52 @@ public class JavaParserAnalyzer {
                 classInfo.put(StringUtils.fromString("superClass"), null);
             }
             
+            String genericSuperStr = "";
+            if (signature != null && superName != null && !superName.equals("java/lang/Object")) {
+                String superDesc = "L" + superName + "<";
+                int idx = signature.indexOf(superDesc);
+                if (idx >= 0) {
+                    int start = idx + superDesc.length();
+                    int depth = 1;
+                    int end = start;
+                    while (end < signature.length() && depth > 0) {
+                        char c = signature.charAt(end);
+                        if (c == '<') depth++;
+                        else if (c == '>') depth--;
+                        end++;
+                    }
+                    if (depth == 0) {
+                        String paramsPart = signature.substring(start, end - 1);
+                        StringBuilder sb = new StringBuilder();
+                        sb.append(superName.replace('/', '.'));
+                        sb.append('<');
+                        int pi = 0;
+                        boolean first = true;
+                        while (pi < paramsPart.length()) {
+                            if (paramsPart.charAt(pi) == 'L') {
+                                int semi = paramsPart.indexOf(';', pi);
+                                if (semi > pi) {
+                                    if (!first) sb.append(',');
+                                    String raw = paramsPart.substring(pi + 1, semi);
+                                    int genIdx = raw.indexOf('<');
+                                    if (genIdx >= 0) {
+                                        sb.append(raw.substring(0, genIdx).replace('/', '.'));
+                                    } else {
+                                        sb.append(raw.replace('/', '.'));
+                                    }
+                                    first = false;
+                                    pi = semi + 1;
+                                } else { pi++; }
+                            } else { pi++; }
+                        }
+                        sb.append('>');
+                        genericSuperStr = sb.toString();
+                    }
+                }
+            }
+            classInfo.put(StringUtils.fromString("genericSuperClass"),
+                    StringUtils.fromString(genericSuperStr));
+
             // Interfaces
             BString[] interfaceNames = new BString[interfaces.length];
             for (int i = 0; i < interfaces.length; i++) {
@@ -1091,23 +1203,55 @@ public class JavaParserAnalyzer {
         }
         
         @Override
-        public org.objectweb.asm.FieldVisitor visitField(int access, String name, String descriptor, 
+        public org.objectweb.asm.FieldVisitor visitField(int access, String name, String descriptor,
                 String signature, Object value) {
-            
-            // For enums, extract enum constants (public static final fields of the enum type)
-            if (isEnum && (access & Opcodes.ACC_PUBLIC) != 0 && 
-                (access & Opcodes.ACC_STATIC) != 0 && (access & Opcodes.ACC_FINAL) != 0 &&
-                (access & Opcodes.ACC_ENUM) != 0) {
-                
+
+            boolean isPublic  = (access & Opcodes.ACC_PUBLIC)  != 0;
+            boolean isStatic  = (access & Opcodes.ACC_STATIC)  != 0;
+            boolean isFinal   = (access & Opcodes.ACC_FINAL)   != 0;
+            boolean isEnumCst = (access & Opcodes.ACC_ENUM)    != 0;
+
+            // Skip synthetic/compiler-generated names
+            if (name.startsWith("$") || name.startsWith("this$")) {
+                return null;
+            }
+
+            // Pattern A: Java enum constants — always extracted
+            boolean extractAsEnum = isEnum && isPublic && isStatic && isFinal && isEnumCst;
+
+            boolean extractAsConstantHolder = false;
+            if (!isEnum && isPublic && isStatic && isFinal && descriptor != null) {
+                String selfDesc = "L" + enumClassName.replace('.', '/') + ";";
+                extractAsConstantHolder = descriptor.equals(selfDesc);
+            }
+
+            boolean extractAsInstanceField = !isStatic && !isEnumCst && !extractAsEnum && !extractAsConstantHolder;
+            if (extractAsInstanceField) {
+                String fieldTypeName = descriptorToClassName(descriptor);
+                BMap<BString, Object> fieldInfo = ValueCreator.createMapValue(mapType);
+                fieldInfo.put(StringUtils.fromString("name"), StringUtils.fromString(name));
+                fieldInfo.put(StringUtils.fromString("type"), StringUtils.fromString(fieldTypeName));
+                fieldInfo.put(StringUtils.fromString("typeName"), StringUtils.fromString(fieldTypeName));
+                fieldInfo.put(StringUtils.fromString("fullType"), StringUtils.fromString(fieldTypeName));
+                fieldInfo.put(StringUtils.fromString("isStatic"), false);
+                fieldInfo.put(StringUtils.fromString("isFinal"), isFinal);
+                fieldInfo.put(StringUtils.fromString("isDeprecated"), false);
+                fieldInfo.put(StringUtils.fromString("javadoc"), (Object) null);
+                fields.add(fieldInfo);
+            }
+
+            if (extractAsEnum || extractAsConstantHolder) {
                 BMap<BString, Object> fieldInfo = ValueCreator.createMapValue(mapType);
                 fieldInfo.put(StringUtils.fromString("name"), StringUtils.fromString(name));
                 fieldInfo.put(StringUtils.fromString("type"), StringUtils.fromString(enumClassName));
+                fieldInfo.put(StringUtils.fromString("typeName"), StringUtils.fromString(enumClassName));
+                fieldInfo.put(StringUtils.fromString("fullType"), StringUtils.fromString(enumClassName));
                 fieldInfo.put(StringUtils.fromString("isStatic"), true);
                 fieldInfo.put(StringUtils.fromString("isFinal"), true);
                 fieldInfo.put(StringUtils.fromString("isDeprecated"), false);
-                fieldInfo.put(StringUtils.fromString("literalValue"), null);
-                // Try to attach javadoc from extracted index if available
-                String enumFieldJavadoc = null;
+
+                // Attach javadoc if available
+                String fieldJavadoc = null;
                 try {
                     if (javadocIndex != null) {
                         Map<String, String> classMap = javadocIndex.get(enumClassName);
@@ -1116,56 +1260,31 @@ public class JavaParserAnalyzer {
                         }
                         if (classMap != null) {
                             String desc = classMap.get(name);
-                            if (desc != null) enumFieldJavadoc = desc;
+                            if (desc != null) fieldJavadoc = desc;
                         }
                     }
                 } catch (Exception ignored) {}
-                fieldInfo.put(StringUtils.fromString("javadoc"), enumFieldJavadoc == null ? null : StringUtils.fromString(enumFieldJavadoc));
-                fields.add(fieldInfo);
-            } else if (!isEnum && (access & Opcodes.ACC_PUBLIC) != 0 &&
-                    (access & Opcodes.ACC_STATIC) != 0 && (access & Opcodes.ACC_FINAL) != 0) {
-                // For enum-like classes (e.g., Region), capture public static final self-typed constants.
-                String fieldType = org.objectweb.asm.Type.getType(descriptor).getClassName();
-                if (fieldType.equals(enumClassName)) {
-                    BMap<BString, Object> fieldInfo = ValueCreator.createMapValue(mapType);
-                    fieldInfo.put(StringUtils.fromString("name"), StringUtils.fromString(name));
-                    fieldInfo.put(StringUtils.fromString("type"), StringUtils.fromString(fieldType));
-                    fieldInfo.put(StringUtils.fromString("isStatic"), true);
-                    fieldInfo.put(StringUtils.fromString("isFinal"), true);
-                    fieldInfo.put(StringUtils.fromString("isDeprecated"), false);
-                    fieldInfo.put(StringUtils.fromString("literalValue"), null);
+                fieldInfo.put(StringUtils.fromString("javadoc"),
+                        fieldJavadoc == null ? null : StringUtils.fromString(fieldJavadoc));
 
-                    String fieldJavadoc = null;
-                    try {
-                        if (javadocIndex != null) {
-                            Map<String, String> classMap = javadocIndex.get(enumClassName);
-                            if (classMap == null) {
-                                classMap = javadocIndex.get(enumClassName.replace('$', '.'));
-                            }
-                            if (classMap != null) {
-                                fieldJavadoc = classMap.get(name);
-                            }
-                        }
-                    } catch (Exception ignored) {
-                    }
-                    fieldInfo.put(StringUtils.fromString("javadoc"),
-                            fieldJavadoc == null ? null : StringUtils.fromString(fieldJavadoc));
+                if (extractAsEnum) {
                     fields.add(fieldInfo);
-                    enumLikeFieldEntries.put(name, fieldInfo);
+                } else {
+                    pendingConstantHolderFields.put(name, fieldInfo);
                 }
             }
-            
+
             return null;
         }
         
         @Override
-        public MethodVisitor visitMethod(int access, String name, String descriptor, 
+        public MethodVisitor visitMethod(int access, String name, String descriptor,
                 String signature, String[] exceptions) {
 
-            if ("<clinit>".equals(name)) {
-                return createEnumLikeClinitVisitor();
+            if (name.equals("<clinit>") && !pendingConstantHolderFields.isEmpty()) {
+                return new ConstantHolderInitVisitor(enumClassName, constantHolderStringValues);
             }
-            
+
             // Only include public methods
             if ((access & Opcodes.ACC_PUBLIC) != 0) {
                 BMap<BString, Object> methodInfo = ValueCreator.createMapValue(mapType);
@@ -1184,8 +1303,7 @@ public class JavaParserAnalyzer {
                 methodInfo.put(StringUtils.fromString("isStatic"), (access & Opcodes.ACC_STATIC) != 0);
                 methodInfo.put(StringUtils.fromString("isFinal"), (access & Opcodes.ACC_FINAL) != 0);
                 methodInfo.put(StringUtils.fromString("isAbstract"), (access & Opcodes.ACC_ABSTRACT) != 0);
-                methodInfo.put(StringUtils.fromString("isDeprecated"), false); // Would need annotation analysis
-                // Attach javadoc from index if available (ASM has no inline javadoc)
+                methodInfo.put(StringUtils.fromString("isDeprecated"), false); 
                 String methodJavadoc = null;
                 try {
                     if (javadocIndex != null) {
@@ -1234,125 +1352,18 @@ public class JavaParserAnalyzer {
             
             return null;
         }
-
-        private MethodVisitor createEnumLikeClinitVisitor() {
-            return new MethodVisitor(Opcodes.ASM9) {
-                private final Deque<Object> stack = new ArrayDeque<>();
-
-                private Object popOrUnknown() {
-                    if (stack.isEmpty()) {
-                        return UNKNOWN_STACK_VALUE;
-                    }
-                    return stack.pop();
-                }
-
-                @Override
-                public void visitLdcInsn(Object value) {
-                    if (value instanceof String) {
-                        stack.push(value);
-                    } else {
-                        stack.push(UNKNOWN_STACK_VALUE);
-                    }
-                }
-
-                @Override
-                public void visitInsn(int opcode) {
-                    switch (opcode) {
-                        case Opcodes.ICONST_0 -> stack.push(Boolean.FALSE);
-                        case Opcodes.ICONST_1 -> stack.push(Boolean.TRUE);
-                        case Opcodes.ACONST_NULL -> stack.push(UNKNOWN_STACK_VALUE);
-                        case Opcodes.POP -> popOrUnknown();
-                        case Opcodes.DUP -> {
-                            if (!stack.isEmpty()) {
-                                stack.push(stack.peek());
-                            }
-                        }
-                        default -> {
-                        }
-                    }
-                }
-
-                @Override
-                public void visitMethodInsn(int opcode, String owner, String methodName, String methodDescriptor,
-                        boolean isInterface) {
-                    org.objectweb.asm.Type[] argTypes = org.objectweb.asm.Type.getArgumentTypes(methodDescriptor);
-                    Object[] args = new Object[argTypes.length];
-                    for (int i = argTypes.length - 1; i >= 0; i--) {
-                        args[i] = popOrUnknown();
-                    }
-
-                    org.objectweb.asm.Type returnType = org.objectweb.asm.Type.getReturnType(methodDescriptor);
-                    boolean enumCtorCall = isEnum && opcode == Opcodes.INVOKESPECIAL &&
-                            owner.replace('/', '.').equals(enumClassName) && "<init>".equals(methodName);
-
-                    if (enumCtorCall) {
-                        String literalValue = null;
-                        if (args.length >= 3 && args[2] instanceof String) {
-                            literalValue = (String) args[2];
-                        }
-                        stack.push(new EnumLikeConstantValue(literalValue));
-                        return;
-                    }
-
-                    boolean returnsSelfType = opcode == Opcodes.INVOKESTATIC &&
-                            returnType != null && enumClassName.equals(returnType.getClassName());
-
-                    if (returnsSelfType) {
-                        if (args.length > 0 && args[0] instanceof String) {
-                            stack.push(new EnumLikeConstantValue((String) args[0]));
-                        } else {
-                            stack.push(UNKNOWN_STACK_VALUE);
-                        }
-                    } else if (returnType != null && returnType.getSort() != org.objectweb.asm.Type.VOID) {
-                        stack.push(UNKNOWN_STACK_VALUE);
-                    }
-                }
-
-                @Override
-                public void visitFieldInsn(int opcode, String owner, String fieldName, String fieldDescriptor) {
-                    if (opcode == Opcodes.PUTSTATIC) {
-                        Object value = popOrUnknown();
-                        String ownerClass = owner.replace('/', '.');
-                        String fieldType = org.objectweb.asm.Type.getType(fieldDescriptor).getClassName();
-
-                        if (ownerClass.equals(enumClassName) && fieldType.equals(enumClassName) &&
-                                value instanceof EnumLikeConstantValue) {
-                            String literalValue = ((EnumLikeConstantValue) value).value;
-                            if (literalValue != null && !literalValue.isEmpty()) {
-                                enumLikeConstantValues.put(fieldName, literalValue);
-                            }
-                        }
-                    }
-                }
-            };
-        }
         
         @Override
         public void visitEnd() {
-            if (!enumLikeFieldEntries.isEmpty()) {
-                foreachField:
-                for (Map.Entry<String, BMap<BString, Object>> entry : enumLikeFieldEntries.entrySet()) {
-                    String literalValue = enumLikeConstantValues.get(entry.getKey());
-                    if (literalValue == null || literalValue.isEmpty()) {
-                        continue;
-                    }
-                    entry.getValue().put(StringUtils.fromString("javadoc"), StringUtils.fromString(literalValue));
-                    entry.getValue().put(StringUtils.fromString("literalValue"), StringUtils.fromString(literalValue));
+            for (Map.Entry<String, BMap<BString, Object>> entry : pendingConstantHolderFields.entrySet()) {
+                String fieldName = entry.getKey();
+                BMap<BString, Object> fieldInfo = entry.getValue();
+                String actualValue = constantHolderStringValues.get(fieldName);
+                if (actualValue != null) {
+                    fieldInfo.put(StringUtils.fromString("literalValue"),
+                            StringUtils.fromString(actualValue));
                 }
-            }
-
-            if (isEnum && !fields.isEmpty()) {
-                for (BMap<BString, Object> fieldInfo : fields) {
-                    BString fieldName = (BString) fieldInfo.get(StringUtils.fromString("name"));
-                    if (fieldName == null) {
-                        continue;
-                    }
-                    String literalValue = enumLikeConstantValues.get(fieldName.getValue());
-                    if (literalValue == null || literalValue.isEmpty()) {
-                        continue;
-                    }
-                    fieldInfo.put(StringUtils.fromString("literalValue"), StringUtils.fromString(literalValue));
-                }
+                fields.add(fieldInfo);
             }
 
             // Set collected methods, fields, constructors
@@ -1496,7 +1507,6 @@ public class JavaParserAnalyzer {
                 
                 // Handle wildcards
                 if (c == '+' || c == '-') {
-                    // Skip wildcard indicator
                     i++;
                     c = inner.charAt(i);
                 }
@@ -1506,8 +1516,7 @@ public class JavaParserAnalyzer {
                         result.append("?");
                         i++;
                     }
-                    case 'L' ->                         {
-                            // Object type - find matching ;
+                    case 'L' -> {
                             int depth = 0;
                             int end = i + 1;
                             while (end < inner.length()) {
@@ -1519,13 +1528,13 @@ public class JavaParserAnalyzer {
                             }       String typeStr = inner.substring(i, end + 1);
                             result.append(signatureToTypeName(typeStr));
                             i = end + 1;
-                        }
-                    case 'T' ->                         {
+                    }
+                    case 'T' -> {
                             // Type variable
                             int end = inner.indexOf(';', i);
                             result.append(inner.substring(i + 1, end));
                             i = end + 1;
-                        }
+                    }
                     default -> {
                         // Primitive type
                         result.append(signatureToTypeName(String.valueOf(c)));
@@ -1616,7 +1625,56 @@ public class JavaParserAnalyzer {
             }
         }
     }
-    
+
+    /**
+     * MethodVisitor for a class static initializer.
+     *
+     * This is the standard constant-holder pattern where a final class exposes a fixed
+     * set of named instances created through a string factory method.  The pattern is
+     * generic and not tied to any particular SDK or vendor.
+     */
+    private static class ConstantHolderInitVisitor extends MethodVisitor {
+
+        private final String classInternalName; // e.g. "software/amazon/awssdk/regions/Region"
+        private final Map<String, String> result;
+        private String pendingString = null;   // last LDC string seen
+
+        ConstantHolderInitVisitor(String className, Map<String, String> result) {
+            super(Opcodes.ASM9);
+            this.classInternalName = className.replace('.', '/');
+            this.result = result;
+        }
+
+        @Override
+        public void visitLdcInsn(Object value) {
+            // Record string constants; reset on non-string LDC
+            pendingString = (value instanceof String) ? (String) value : null;
+        }
+
+        @Override
+        public void visitMethodInsn(int opcode, String owner, String name,
+                String descriptor, boolean isInterface) {
+            if (opcode != Opcodes.INVOKESTATIC || !owner.equals(classInternalName)) {
+                pendingString = null;
+            }
+        }
+
+        @Override
+        public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
+            if (opcode == Opcodes.PUTSTATIC
+                    && owner.equals(classInternalName)
+                    && pendingString != null) {
+                result.put(name, pendingString);
+            }
+            pendingString = null;
+        }
+
+        @Override public void visitInsn(int opcode) {}
+        @Override public void visitIntInsn(int opcode, int operand) {}
+        @Override public void visitVarInsn(int opcode, int var) {}
+        @Override public void visitTypeInsn(int opcode, String type) {}
+    }
+
     // Overload to accept Ballerina BString
     public static Object analyzeJarWithJavaParser(BString jarPath) {
         if (jarPath == null) {

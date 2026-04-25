@@ -169,26 +169,78 @@ RULE 6 — MEMBER CLASS TO STRUCTURE MAPPING
         Otherwise → type = simpleName of the member reference
 
 RULE 7 — CONNECTION FIELDS
-  Map all connectionFields from metadata.clientInit.connectionFields:
-    - Use isRequired to determine kind (almost always "Included").
-    - If enumReference is set: the Ballerina type is the enum simple name.
-    - If memberReference is set: the Ballerina type is the member simple name.
-    - Otherwise: use the Java type mapping.
+  Map all connectionFields from metadata.clientInit.connectionFields using the steps below.
 
-  SKIP these Java SDK infrastructure types from connectionFields entirely — they are
-  not relevant to a Ballerina connector and cannot be configured by a Ballerina user:
+  STEP 7-A — SKIP infrastructure fields entirely (not configurable by a Ballerina user):
     SdkHttpClient, SdkHttpClientBuilder, *HttpClient*, *HttpClientBuilder*,
     *EndpointProvider*, *AuthSchemeProvider*, *AuthScheme*, *RequestSigner*,
     *ExecutionInterceptor*, *MetricPublisher*, *AttributeMap*, *ClientContext*,
     Consumer<*>, Supplier<*>, java.util.function.*
 
-  KEEP and map these common connection fields to Ballerina types:
-    region (type Region / String)       → string region
-    credentialsProvider                 → string accessKeyId + string secretAccessKey
-      (OR keep as AwsCredentialsProvider if the SDK has no simpler credential fields)
-    endpointOverride (URI/URL/String)   → string endpointOverride
-    defaultsMode (enum)                 → DefaultsMode defaultsMode
-    dualstackEnabled, fipsEnabled       → boolean (keep as-is)
+  STEP 7-B — SCALAR fields (no interfaceImplementations, no memberReference, no enumReference):
+    Use isRequired to determine kind. Apply the Java type mapping rules.
+
+  STEP 7-C — ENUM reference fields:
+    Ballerina type = simple name of the enum (last segment of the FQN).
+
+  STEP 7-D — MEMBER REFERENCE fields:
+    1. Look up the memberReference class in memberClasses by FQN.
+    2. Extract its fields from memberClasses and create a STRUCTURE entry (via Rule 6).
+    3. Use the member simple name as the Ballerina type for this connectionField.
+
+  STEP 7-E — INTERFACE IMPLEMENTATION fields (interfaceImplementations non-empty):
+    These occur when a connection field is typed as a Java interface that has multiple
+    concrete implementations (e.g. a credentials or auth provider interface).
+
+    1. For each FQN in interfaceImplementations, look it up in memberClasses and
+       collect its simple name and fields array.
+
+    2. Using your knowledge of real-world SDK usage and developer workflows, identify
+       which implementations are the most commonly used when developers configure a
+       connector. Consider ALL realistic developer workflows — not just explicit key/secret
+       pairs, but also profile-based auth, environment-based auth, or session tokens.
+       Exclude utility/infrastructure implementations: chain resolvers that just delegate
+       to other providers, anonymous/no-op providers, and any implementation whose sole
+       purpose is to wrap or iterate over other providers.
+
+    3. Select the TOP 2-4 most commonly used implementations. Use your real-world
+       knowledge of the SDK to rank them. If only 1-2 are genuinely common, select only
+       those. Do not include rarely-used or infrastructure-only implementations.
+
+    4. For EACH selected implementation, create a STRUCTURE entry and apply these
+       three refinements:
+
+       REFINEMENT A — FLATTEN single-field wrappers:
+         If the implementation has a field whose type is a memberReference acting as a
+         container for the actual credential values, inline that member class's fields
+         directly into this STRUCTURE. Do NOT create a separate nested type for it.
+         Example: StaticCredentialsProvider { credentials: AwsCredentials { accessKeyId,
+         secretAccessKey } } → StaticCredentialsProvider { accessKeyId, secretAccessKey }
+         with no AwsCredentials type in the IR.
+
+       REFINEMENT B — KEEP only developer-configurable fields:
+         Keep only the fields a developer would explicitly write in a config file.
+         DISCARD: computed values, expiration timestamps, internal provider names,
+         cached results, internal identifiers — any field a developer would never set.
+
+       REFINEMENT C — FIELD KINDS for credential fields:
+         Fields required to authenticate
+         should have kind "Required". Optional extras → "Included".
+
+    5. COMPLETELY EXCLUDE all non-selected implementations:
+       - Do NOT create STRUCTURE entries for them.
+       - Do NOT reference them anywhere in connectionFields, structures, or collections.
+       - Do NOT include nested types that exist solely because of a non-selected
+         implementation.
+
+    6. Build the connectionField type as follows:
+       - If only 1 implementation was selected: use its simple name as a plain type.
+       - If 2-4 implementations were selected: use a union type string joining their
+         simple names with "|" (e.g. "StaticCredentialsProvider|ProfileCredentialsProvider").
+       Set kind to "Included" in both cases.
+
+    7. If no implementation has any fields at all in memberClasses, use the raw
+       interface simple name with kind "Included" and type "anydata".
 
 RULE 8 — COMPLETENESS (MANDATORY — perform a full sweep before returning)
   Before returning the IR, perform a multi-pass completeness sweep:

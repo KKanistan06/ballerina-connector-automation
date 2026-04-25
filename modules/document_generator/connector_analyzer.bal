@@ -150,7 +150,6 @@ public function analyzeExampleDirectory(string examplePath, string exampleDirNam
 }
 
 public function formatExampleName(string dirName) returns string {
-    // Convert "automated-summary-report" to "Automated summary report"
     string[] parts = regexp:split(re `[-_]`, dirName);
     string[] capitalizedParts = [];
 

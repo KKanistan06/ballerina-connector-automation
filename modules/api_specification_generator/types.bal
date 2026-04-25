@@ -63,9 +63,6 @@ type AnthropicConfig record {
 };
 
 # Parameter / field kind in the IR.
-# - REQUIRED: Mandatory for the operation to succeed
-# - INCLUDED: Optional/nullable with no default value
-# - DEFAULT:  Optional with a pre-defined fallback value in the SDK
 public enum FieldKind {
     REQUIRED = "Required",
     INCLUDED = "Included",

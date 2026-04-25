@@ -263,8 +263,6 @@ function buildClientClass(IntermediateRepresentation ir) returns string {
 }
 
 # Generate a single remote function declaration.
-# Required fields from the request struct are listed directly in the signature;
-# optional / default fields are grouped into a *<FnName>Config included record.
 #
 # + fn - IR function
 # + structures - All IR structures (to look up request types)
@@ -284,8 +282,6 @@ function buildRemoteFunction(IRFunction fn, IRStructure[] structures) returns st
 }
 
 # Build the Ballerina doc comment block for a remote function.
-# When the function maps to a request struct, documents each required field
-# individually and adds a single "+ config" line for optional parameters.
 #
 # + fn - IR function
 # + reqStruct - The resolved request structure, or nil for simple functions
@@ -339,9 +335,6 @@ function buildFunctionDoc(IRFunction fn, IRStructure? reqStruct) returns string 
 }
 
 # Build the parameter list for a remote function signature.
-# Required fields of the request struct become individual typed parameters.
-# Optional / default fields are collapsed into *<FnName>Config (included record).
-# Falls back to the raw IRParameter list when there is no request struct.
 #
 # + fn - IR function
 # + reqStruct - The resolved request structure, or nil
@@ -474,7 +467,6 @@ function buildReturnDescription(IRReturn ret) returns string {
 # + name - Original identifier name (camelCase)
 # + return - Source-safe identifier
 function safeIdentifier(string name) returns string {
-    // If already escaped (starts with '), keep as-is
     if name.startsWith("'") {
         return name;
     }
@@ -494,11 +486,10 @@ function formatDefaultValue(string fieldType, string? defaultValue) returns stri
     string dv = defaultValue ?: "()";
     if fieldType == "string" {
         if dv.startsWith("\"") && dv.endsWith("\"") {
-            return dv; // already quoted
+            return dv;
         }
         return string `"${dv}"`;
     }
-    // For enum types, int, float, boolean, decimal: use as-is
     return dv;
 }
 
@@ -515,8 +506,8 @@ function trimTrailingPeriod(string text) returns string {
 
 # Derive a human-friendly base name by stripping a trailing "Client" suffix.
 #
-# + clientName - Full client name (e.g. "S3Client")
-# + return - Base name (e.g. "S3")
+# + clientName - Full client name
+# + return - Base name
 function deriveBaseName(string clientName) returns string {
     if clientName.endsWith("Client") {
         return clientName.substring(0, clientName.length() - 6);
@@ -526,8 +517,8 @@ function deriveBaseName(string clientName) returns string {
 
 # Capitalize the first character of a string (camelCase → PascalCase prefix).
 #
-# + s - Input string (e.g. "sendMessage")
-# + return - String with first character uppercased (e.g. "SendMessage")
+# + s - Input string
+# + return - String with first character uppercased
 function capitalizeFirst(string s) returns string {
     if s.length() == 0 {
         return s;

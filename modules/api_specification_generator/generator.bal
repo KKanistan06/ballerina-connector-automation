@@ -17,7 +17,6 @@ import ballerina/io;
 import ballerina/time;
 
 # Generate a Ballerina API Specification from raw sdk_analyzer metadata.
-#
 # This is the primary entry point for the module.
 #
 # + config - Generator configuration

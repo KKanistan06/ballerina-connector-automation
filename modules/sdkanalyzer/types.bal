@@ -70,15 +70,15 @@ public type AnalyzerConfig record {|
     boolean quietMode = false;
     # Auto-confirm all prompts
     boolean autoYes = false;
-    # Filter internal packages (sun.*, com.sun.*, etc.)
+    # Filter internal packages
     boolean filterInternal = true;
     # Include deprecated methods
     boolean includeDeprecated = false;
     # Include private/protected members
     boolean includeNonPublic = false;
-    # Custom package filters (packages to exclude)
+    # Custom package filters
     string[] excludePackages = [];
-    # Specific packages to analyze (empty = all packages)
+    # Specific packages to analyze
     string[] includePackages = [];
     # Maximum depth for dependency resolution
     int maxDependencyDepth = 3;
@@ -86,13 +86,13 @@ public type AnalyzerConfig record {|
     boolean resolveDependencies = true;
     # Specify to use local Maven repository
     boolean useLocalRepository = true;
-    # Custom Maven repository URL (if any)
+    # Custom Maven repository URL
     string? mavenRepository = ();
     # Enable offline mode (no network calls)
     boolean offlineMode = false;
     # Use documentation instead of JAR analysis
     boolean useDocumentation = false;
-    # Documentation URL (Javadoc/API docs)
+    # Documentation URL
     string? documentationUrl = ();
     # Explicitly specify main API class name
     string? apiClassName = ();
@@ -113,7 +113,7 @@ public type AnalyzerConfig record {|
 public type ParsedJarResult record {|
     # All classes extracted from the main JAR
     ClassInfo[] classes;
-    # Paths to all dependency JAR files (for lazy class resolution)
+    # Paths to all dependency JAR files
     string[] dependencyJarPaths;
 |};
 
@@ -128,46 +128,45 @@ public type ConnectionFieldInfo record {|
     string fullType;
     # Whether the field is required for initialization
     boolean isRequired;
-    # Enum values if this field is an enum type (reference to cached enum)
+    # Enum values if this field is an enum type
     string? enumReference = ();
-    # Reference to member class for List/Map/Collection types (the generic type parameter)
+    # Reference to member class for List/Map/Collection types
     string? memberReference = ();
-    # Reference to the type class for non-basic types (non-primitive, non-collection)
+    # Reference to the type class for non-basic types
     string? typeReference = ();
     # Description from javadoc or LLM enrichment
     string? description = ();
     # First-level resolved class context for LLM enrichment.
     string? level1Context = ();
+    # Concrete implementations discovered when this field's type is an interface or abstract class.
+    string[] interfaceImplementations = [];
 |};
 
 # Carries LLM-synthesized type metadata for a single connection field.
-# Produced by enrichConnectionFieldsWithLLM and consumed by generateStructuredMetadata
-# to populate enums / memberClasses for types that could not be resolved from JARs.
 public type SyntheticTypeMetadata record {|
-    # Fully qualified type name this metadata describes (key for enums/memberClasses maps)
+    # Fully qualified type name this metadata describes
     string fullType;
     # Simple type name
     string simpleName;
     # Ballerina type classification from the LLM
-    # One of: string | int | boolean | enum | record | object | uri
     string ballerinaType;
-    # Enum constant names (non-empty only when ballerinaType == "enum")
+    # Enum constant names
     string[] enumValues;
-    # Sub-fields (non-empty only when ballerinaType == "record")
+    # Sub-fields
     RequestFieldInfo[] subFields;
 |};
 
 # Client initialization pattern metadata
 public type ClientInitPattern record {|
-    # Pattern name (e.g., builder, factory, constructor, static)
+    # Pattern name
     string patternName;
     # Recommended initialization snippet
     string initializationCode;
     # Optional explanation or reasoning
     string? explanation = ();
-    # Detection origin (llm|heuristic|error)
+    # Detection origin
     string detectedBy;
-    # Fully qualified name of the resolved builder class (if pattern is builder)
+    # Fully qualified name of the resolved builder class
     string? builderClass = ();
     # Connection / configuration fields exposed by the builder hierarchy
     ConnectionFieldInfo[] connectionFields = [];
@@ -185,7 +184,7 @@ public type SDKMetadata record {|
     string jarPath;
     # Main package name
     string mainPackage;
-    # Client initialization pattern (LLM or heuristic)
+    # Client initialization pattern
     ClientInitPattern clientInitPattern;
     # All extracted classes
     ClassMetadata[] classes;
@@ -213,7 +212,7 @@ public type ClassMetadata record {|
     boolean isAbstract;
     # Specifies whether this is an enum
     boolean isEnum;
-    # Specifies the superclass name (if any)
+    # Specifies the superclass name
     string? superClass;
     # Fully qualified interface names
     string[] interfaces;
@@ -235,7 +234,7 @@ public type MethodMetadata record {|
     string methodName;
     # Parameters of the method
     ParameterMetadata[] parameters;
-    # Return type (fully qualified)
+    # Return type
     string returnType;
     # Simple return type name
     string returnTypeSimple;
@@ -247,19 +246,19 @@ public type MethodMetadata record {|
     boolean isFinal;
     # Specifies whether method is abstract
     boolean isAbstract;
-    # Method signature (for uniqueness)
+    # Method signature
     string signature;
     # Specifies whether this method is deprecated
     boolean isDeprecated;
-    # Generic type parameters (if any)
+    # Generic type parameters
     string[] typeParameters;
 |};
 
-# Request field for output (excludes internal flags like isCommonlyUsed)
+# Request field for output
 public type RequestFieldOutput record {|
     # Field name
     string name;
-    # Type name (simple name, not fully qualified)
+    # Type name
     string 'type;
     # Fully qualified type
     string fullType;
@@ -267,21 +266,21 @@ public type RequestFieldOutput record {|
     boolean isRequired;
     # Human-readable description of this field
     string? description = ();
-    # Enum values if this field is an enum type (reference to cached enum)
+    # Enum values if this field is an enum type
     string? enumReference = ();
-    # Reference to member class for List/Map/Collection types (the generic type parameter)
+    # Reference to member class for List/Map/Collection types
     string? memberReference = ();
 |};
 
 # Metadata for a method/constructor parameter.
 public type ParameterMetadata record {|
-    # Parameter name (may be auto-generated if not available)
+    # Parameter name
     string paramName;
     # Fully qualified type name
     string paramType;
     # Simple type name
     string paramTypeSimple;
-    # Request object fields (if this parameter is a Request class)
+    # Request object fields
     RequestFieldOutput[]? requestFields = ();
 |};
 
@@ -317,11 +316,11 @@ public type ConstructorMetadata record {|
 type AnthropicConfiguration record {
     # API key for authentication
     string apiKey;
-    # Model to use for analysis (e.g., "claude-opus-4-1-20250805")
+    # Model to use for analysis
     string model;
     # Maximum number of tokens for the API call
     int maxTokens;
-    # Temperature for response generation (0.0 = deterministic, higher = more creative)
+    # Temperature for response generation
     decimal temperature;
     # Enable extended thinking (deep research mode) for complex analysis
     boolean enableExtendedThinking;
@@ -333,7 +332,7 @@ public type TypeHierarchy record {|
     map<string> inheritance;
     # Map of class name to its interfaces
     map<string[]> implementations;
-    # Map of class name to its subclasses (reverse hierarchy)
+    # Map of class name to its subclasses
     map<string[]> subclasses;
 |};
 
@@ -385,9 +384,9 @@ public type ClassInfo record {|
     boolean isAbstract;
     # Specifies whether the class is an enum
     boolean isEnum;
-    # Simple class name (e.g., "S3Client")
+    # Simple class name
     string simpleName;
-    # Fully qualified superclass name (if any)
+    # Fully qualified superclass name
     string? superClass;
     # Fully qualified interface names
     string[] interfaces;
@@ -401,8 +400,9 @@ public type ClassInfo record {|
     boolean isDeprecated;
     # Annotation names present on the class
     string[] annotations;
+    # Generic superclass signature including type parameters
+    string genericSuperClass = "";
     # Indicates whether this class entry was unresolved during reflection
-    # (e.g., missing dependencies prevented full loading). Default is `false`.
     boolean unresolved = false;
 |};
 
@@ -412,7 +412,7 @@ public type ClientClassInfo record {|
     ClassInfo classInfo;
     # Specifies the client class score
     ClientClassScore score;
-    # Specifies the priority ( 1 = highest, 4 = lowest )
+    # Specifies the priority
     int priority;
 |};
 
@@ -421,10 +421,10 @@ public type MethodInfo record {|
     # Method name
     string name;
     # Parameters of the method
-    ParameterInfo[] parameters;
+    ParameterInfo[] parameters = [];
     # Return type (fully qualified)
     string returnType;
-    # Return object fields (if the return type is a Response class)
+    # Return object fields
     RequestFieldInfo[]? returnFields = ();
     # Exceptions that can be thrown
     string[] exceptions;
@@ -434,14 +434,14 @@ public type MethodInfo record {|
     boolean isFinal;
     # Specifies whether method is abstract
     boolean isAbstract;
-    # Method signature (for uniqueness)
+    # Method signature
     string signature;
     # Specifies whether this method is deprecated
     boolean isDeprecated;
-    # Generic type parameters (if any)
-    string[] typeParameters;
+    # Generic type parameters
+    string[] typeParameters = [];
     # Annotation names present on the method
-    string[] annotations;
+    string[] annotations = [];
     # User-friendly description of what this method does
     string? description = ();
 |};
@@ -450,9 +450,9 @@ public type MethodInfo record {|
 public type ParameterInfo record {|
     # Parameter name
     string name;
-    # Parameter type name (simple name)
+    # Parameter type name
     string typeName;
-    # Request object fields (if this parameter is a Request class)
+    # Request object fields
     RequestFieldInfo[]? requestFields = ();
 |};
 
@@ -460,15 +460,15 @@ public type ParameterInfo record {|
 public type FieldInfo record {|
     # Field name
     string name;
-    # Field type (fully qualified) 
+    # Field type
     string typeName;
     # Specifies whether field is static
     boolean isStatic;
     # Specifies whether field is final
     boolean isFinal;
-    # Javadoc comment (if available)
+    # Javadoc comment
     string? javadoc;
-    # Literal value associated with enum-like/enum constants (if available)
+    # Literal value associated with enum-like/enum constants
     string? literalValue = ();
     # Specifies whether this field is deprecated
     boolean isDeprecated;
@@ -480,7 +480,7 @@ public type ConstructorInfo record {|
     ParameterInfo[] parameters;
     # Exceptions that can be thrown
     string[] exceptions;
-    # Javadoc comment (if available)
+    # Javadoc comment
     string? javadoc;
     # Specifies whether this constructor is deprecated
     boolean isDeprecated;
@@ -488,15 +488,15 @@ public type ConstructorInfo record {|
 
 # LLM-based client scoring criteria
 public type LLMClientScore record {|
-    # Public API score (0-100)
+    # Public API score
     decimal publicApiScore;
-    # Operation coverage score (0-100)
+    # Operation coverage score
     decimal operationCoverage;
-    # Has Request/Response types (0-100)
+    # Has Request/Response types
     decimal hasRequestResponseTypes;
-    # Stability score (0-100)
+    # Stability score
     decimal stabilityScore;
-    # Example usage score (0-100)
+    # Example usage score
     decimal exampleUsageScore;
     # Total weighted score
     decimal totalScore;
@@ -558,7 +558,7 @@ public type PrioritizerConfig record {|
     int maxMethodsPerClient = 20;
     # Include method overloads or just the primary variant
     boolean includeOverloads = false;
-    # Include close(), shutdown(), etc.
+    # Include close(), shutdown()
     boolean includeLifecycleMethods = false;
     # Include builder pattern methods
     boolean includeBuilderMethods = false;
@@ -590,15 +590,15 @@ public type MavenError distinct error;
 public type RequestFieldInfo record {|
     # Field name
     string name;
-    # Field type name (simple)
+    # Field type name
     string typeName;
     # Full qualified type name
     string fullType;
     # Whether this field is required
     boolean isRequired;
-    # Enum values if this field is an enum type (reference to cached enum)
+    # Enum values if this field is an enum type
     string? enumReference = ();
-    # Reference to member class for List/Map/Collection types (the generic type parameter)
+    # Reference to member class for List/Map/Collection types
     string? memberReference = ();
     # User-friendly description of what this field represents
     string? description = ();
@@ -615,7 +615,7 @@ public type RootClientInfo record {|
     # Whether it's an interface
     boolean isInterface;
     # Constructor information
-    ConstructorInfo[] constructors;
+    ConstructorInfo[] constructors = [];
     # Selected and ranked methods
     MethodInfo[] methods;
 |};
@@ -628,7 +628,7 @@ public type SupportingClassInfo record {|
     string simpleName;
     # Package name
     string packageName;
-    # Purpose of this class (Return type, Parameter type, etc.)
+    # Purpose of this class
     string purpose;
 |};
 
@@ -639,7 +639,7 @@ public type MemberClassInfo record {|
     # Package name
     string packageName;
     # Fields of this member class
-    RequestFieldInfo[] fields;
+    RequestFieldInfo[] fields = [];
 |};
 
 # SDK information
@@ -669,7 +669,7 @@ public type AnalysisSummary record {|
 public type EnumMetadata record {|
     # Simple enum class name
     string simpleName;
-    # Enum constant values represented as strings. The default value (if detected)
+    # Enum constant values represented as strings. The default value
     # will be annotated with " - default" in the string.
     string[] values;
 |};
@@ -682,9 +682,9 @@ public type StructuredSDKMetadata record {|
     ClientInitPattern clientInit;
     # Root client class details
     RootClientInfo rootClient;
-    # Member classes referenced in List/Map types (keyed by fully qualified class name)
+    # Member classes referenced in List/Map types
     map<MemberClassInfo> memberClasses;
-    # Enum types referenced in parameters (keyed by fully qualified enum class name)
+    # Enum types referenced in parameters
     map<EnumMetadata> enums;
     # Analysis summary
     AnalysisSummary analysis;
