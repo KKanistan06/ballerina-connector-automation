@@ -1286,6 +1286,10 @@ function executeSdkCommand(string[] args) returns error? {
         return;
     }
 
+    if os:getEnv("ANTHROPIC_API_KEY").length() == 0 {
+        return error("ANTHROPIC_API_KEY is not set. The SDK workflow requires an Anthropic API key.");
+    }
+
     string subCommand = args[0];
     string[] subArgs = args.slice(1);
 
@@ -1410,6 +1414,10 @@ function executeOpenApiCommand(string[] args) returns error? {
     if args.length() == 0 {
         printOpenApiUsage();
         return;
+    }
+
+    if os:getEnv("ANTHROPIC_API_KEY").length() == 0 {
+        io:println("WARNING: ANTHROPIC_API_KEY is not set. AI-powered steps (sanitize, generate-tests, generate-examples, generate-docs) will fail.");
     }
 
     string subCommand = args[0];

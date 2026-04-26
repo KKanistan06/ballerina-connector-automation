@@ -44,7 +44,14 @@ Both workflows produce production-ready Ballerina connectors with typed clients,
    cd connector-automator
    ```
 
-2. Build the package:
+2. Build the `sdkanalyzer` native package (requires `BALLERINA_HOME` or `BAL_HOME` to be set):
+   ```bash
+   cd modules/sdkanalyzer/native
+   ./gradlew build
+   cd ../../..
+   ```
+
+3. Build the package:
    ```bash
    bal build
    ```
