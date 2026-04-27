@@ -171,9 +171,9 @@ public function writeExampleToFile(string connectorPath, string exampleName, str
     // Create example directory
     check file:createDir(exampleDir, file:RECURSIVE);
 
-    // Create .github directory
-    string githubDir = exampleDir + "/.github";
-    check file:createDir(githubDir, file:RECURSIVE);
+    // // Create .github directory
+    // string githubDir = exampleDir + "/.github";
+    // check file:createDir(githubDir, file:RECURSIVE);
 
     // Write main.bal file
     string mainBalPath = exampleDir + "/main.bal";
@@ -658,6 +658,16 @@ function prepareNativeInteropForPack(string connectorPath, string ballerinaDir) 
     boolean nativeRequired = (hasBuildGradle is boolean && hasBuildGradle) ||
                              (hasNativeBuildGradle is boolean && hasNativeBuildGradle);
     if !nativeRequired {
+        return;
+    }
+
+    // A build.gradle alone does not mean native Java source exists (e.g. OpenAPI connectors
+    // may inherit one from a parent directory). Only proceed if Java source files are present.
+    boolean|error hasNativeSrc = file:test(connectorPath + "/native/src", file:EXISTS);
+    boolean|error hasTopLevelSrc = file:test(connectorPath + "/src/main/java", file:EXISTS);
+    boolean javaSourceExists = (hasNativeSrc is boolean && hasNativeSrc) ||
+                               (hasTopLevelSrc is boolean && hasTopLevelSrc);
+    if !javaSourceExists {
         return;
     }
 

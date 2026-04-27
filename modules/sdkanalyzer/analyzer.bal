@@ -167,6 +167,10 @@ public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig 
         io:println(string `  → Output: ${metadataPath}`);
     }
 
+    // Clean up intermediate class listing files
+    do { check file:remove(string `${outputDir}/classes.txt`); } on fail { }
+    do { check file:remove(string `${outputDir}/filtered-classes.txt`); } on fail { }
+
     // Calculate final duration
     time:Utc finalEndTime = time:utcNow();
     decimal finalDuration = time:utcDiffSeconds(finalEndTime, startTime);

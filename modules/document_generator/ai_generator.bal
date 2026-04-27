@@ -84,6 +84,9 @@ public function generateIndividualExampleReadmes(string connectorPath) returns e
     foreach file:MetaData example in examples {
         if example.dir {
             string exampleDirName = extractDirectoryName(example.absPath);
+            if exampleDirName.startsWith(".") {
+                continue;
+            }
             string exampleDirPath = examplesPath + "/" + exampleDirName;
 
             error? result = generateSingleExampleReadme(example.absPath, exampleDirName, metadata);

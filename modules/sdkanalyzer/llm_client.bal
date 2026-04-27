@@ -16,8 +16,6 @@
 import ballerina/http;
 import ballerina/os;
 
-import wso2/connector_automation.utils;
-
 # Get Anthropic configuration from environment
 # + return - Anthropic configuration or error
 function getAnthropicConfig() returns AnthropicConfiguration|error {
@@ -85,23 +83,6 @@ function callAnthropicAPI(AnthropicConfiguration config, string systemPrompt, st
     }
 
     json responseBody = check response.getJsonPayload();
-
-    json|error usageJson = responseBody.usage;
-    if usageJson is json {
-        int inputCount = 0;
-        int outputCount = 0;
-        json|error inputJson = usageJson.input_tokens;
-        json|error outputJson = usageJson.output_tokens;
-        if inputJson is json {
-            int|error parsed = int:fromString(inputJson.toString());
-            if parsed is int { inputCount = parsed; }
-        }
-        if outputJson is json {
-            int|error parsed = int:fromString(outputJson.toString());
-            if parsed is int { outputCount = parsed; }
-        }
-        utils:recordTokenUsage(inputCount, outputCount);
-    }
 
     return responseBody;
 }

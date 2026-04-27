@@ -202,7 +202,7 @@ function executeGenerate(string[] args) returns error? {
             return result;
         }
     }
-        printTokenUsageSummary();
+    
 }
 
 function executeConnector(string[] args) returns error? {
@@ -269,7 +269,7 @@ function executeConnector(string[] args) returns error? {
         return result;
     }
 
-    printTokenUsageSummary();
+
 
 }
 
@@ -322,7 +322,7 @@ function executeGenerateTests(string[] args) returns error? {
 
     string[] forwardedArgs = [connectorOutputPath, specPath, ...args.slice(flagsStartIndex)];
     error? genResult = test_generator:executeTestGen("sdk", ...forwardedArgs);
-    printTokenUsageSummary();
+
     return genResult;
 }
 
@@ -368,7 +368,7 @@ function executeGenerateExamples(string[] args) returns error? {
 
     string[] forwardedArgs = [connectorOutputPath, ...args.slice(flagsStartIndex)];
     error? exResult = example_generator:executeExampleGen(...forwardedArgs);
-    printTokenUsageSummary();
+
     return exResult;
 }
 
@@ -416,7 +416,7 @@ function executeGenerateDocs(string[] args) returns error? {
 
     string[] forwardedArgs = [docCommand, connectorOutputPath, ...args.slice(flagsStartIndex)];
     error? docResult = document_generator:executeDocGen(...forwardedArgs);
-    printTokenUsageSummary();
+
     return docResult;
 }
 
@@ -1016,34 +1016,10 @@ function printPipelineFinalSummary(string datasetKey, string metadataPath, strin
     if connectorInternalFixRan {
         io:println(string `Connector-internal code fixing: ${connectorInternalFixSuccess ? "success" : "partial/failed"}`);
     }
-    oautils:TokenUsage usage = oautils:getTokenUsage();
-    io:println(sep);
-    io:println("LLM Usage");
-    io:println(sep);
-    io:println(string `API calls: ${usage.callCount}`);
-    io:println(string `Input tokens: ${usage.inputTokens}`);
-    io:println(string `Output tokens: ${usage.outputTokens}`);
-    io:println(string `Total tokens: ${usage.totalTokens}`);
-    io:println(string `Estimated cost: $${usage.estimatedCostUsd}`);
 
     if !quietMode {
         io:println(sep);
     }
-}
-
-function printTokenUsageSummary() {
-    oautils:TokenUsage usage = oautils:getTokenUsage();
-    string sep = createMainSeparator("-", 60);
-    io:println("");
-    io:println(sep);
-    io:println("LLM Usage Summary");
-    io:println(sep);
-    io:println(string `API calls: ${usage.callCount}`);
-    io:println(string `Input tokens: ${usage.inputTokens}`);
-    io:println(string `Output tokens: ${usage.outputTokens}`);
-    io:println(string `Total tokens: ${usage.totalTokens}`);
-    io:println(string `Estimated cost: $${usage.estimatedCostUsd}`);
-    io:println(sep);
 }
 
 type AnalyzerFlags record {|

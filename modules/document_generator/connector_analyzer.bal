@@ -100,7 +100,9 @@ function analyzeExamples(string connectorPath, ConnectorMetadata metadata) retur
         foreach file:MetaData example in examples {
             if example.dir {
                 string exampleName = example.absPath.substring(examplesPath.length());
-                metadata.examples.push(exampleName);
+                if !exampleName.startsWith("/.") && !exampleName.startsWith(".") {
+                    metadata.examples.push(exampleName);
+                }
             }
         }
     }

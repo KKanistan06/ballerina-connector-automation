@@ -266,12 +266,14 @@ G5f. Error construction with cause
     - If multiple exceptions can be handled with the same logic, use the multi-catch pattern:
           try {
                   ...
-          } catch (FirstExceptionType | SecondExceptionType e) {
+          } catch (FirstExceptionType e) {
+              return createError("operation failed: " + e.getMessage(), e);
+          } catch (SecondExceptionType e) {
               return createError("operation failed: " + e.getMessage(), e);
           } catch (Exception e) {
               return createError("operation failed: " + e.getMessage(), e);
-          }
-      rather than separate catch blocks with identical bodies.
+          }  
+    - <must> Exception e is mandatory to catch unreported checked exceptions from SDK calls and prevent compile errors.</must>
     - Do not emit per-method catch (Exception e) blocks in generated operation bodies.
       Use the centralized withErrorHandling helper instead, which already has catch (Exception e)
       as its final clause to cover any uncaught checked exceptions.

@@ -1513,12 +1513,14 @@ public function applyFix(string projectPath, string filePath, string fixedCode, 
         if restoreResult is io:Error && !quietMode {
             io:println(string `  ⚠  Failed to restore original content for ${filePath}`);
         }
+        do { check file:remove(backupPath); } on fail { }
         return writeResult;
     }
 
     if !quietMode {
         io:println(string `  ✓ Applied fix to ${filePath}`);
     }
+    do { check file:remove(backupPath); } on fail { }
     return true;
 }
 

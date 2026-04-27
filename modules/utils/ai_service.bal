@@ -5,30 +5,7 @@ import ballerina/regex;
 
 const string CLAUDE_MODEL = "claude-sonnet-4-6";
 
-// Pricing per million tokens (USD) — Claude Sonnet 4
-const decimal INPUT_PRICE_PER_MILLION = 3.0d;
-const decimal OUTPUT_PRICE_PER_MILLION = 15.0d;
-
 string cachedApiKey = "";
-
-// Cumulative token counters across all callAI invocations
-int totalInputTokens = 0;
-int totalOutputTokens = 0;
-int totalCallCount = 0;
-
-# Snapshot of cumulative LLM token usage and estimated cost.
-public type TokenUsage record {|
-    # Total input (prompt) tokens consumed
-    int inputTokens;
-    # Total output (completion) tokens consumed
-    int outputTokens;
-    # Combined token count
-    int totalTokens;
-    # Number of API calls made
-    int callCount;
-    # Estimated cost in USD based on model pricing
-    decimal estimatedCostUsd;
-|};
 
 public function initAIService(boolean quietMode = false) returns error? {
     string apiKey = os:getEnv("ANTHROPIC_API_KEY");
@@ -51,38 +28,6 @@ public function callAI(string prompt) returns string|error {
 
 public function isAIServiceInitialized() returns boolean {
     return cachedApiKey.length() > 0;
-}
-
-# Return a snapshot of cumulative token usage and estimated cost since last reset.
-#
-# + return - TokenUsage record with counts and USD cost estimate
-public function getTokenUsage() returns TokenUsage {
-    decimal inputCost = (<decimal>totalInputTokens / 1000000.0d) * INPUT_PRICE_PER_MILLION;
-    decimal outputCost = (<decimal>totalOutputTokens / 1000000.0d) * OUTPUT_PRICE_PER_MILLION;
-    return {
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-        totalTokens: totalInputTokens + totalOutputTokens,
-        callCount: totalCallCount,
-        estimatedCostUsd: inputCost + outputCost
-    };
-}
-
-# Reset cumulative token counters to zero.
-public function resetTokenUsage() {
-    totalInputTokens = 0;
-    totalOutputTokens = 0;
-    totalCallCount = 0;
-}
-
-# Record token usage from an external LLM call (e.g. modules with their own HTTP client).
-#
-# + inputTokens - Input tokens consumed by the call
-# + outputTokens - Output tokens consumed by the call
-public function recordTokenUsage(int inputTokens, int outputTokens) {
-    totalInputTokens += inputTokens;
-    totalOutputTokens += outputTokens;
-    totalCallCount += 1;
 }
 
 # Extract a JSON object string from an LLM response that may be wrapped in markdown fences.
@@ -160,26 +105,6 @@ function invokeAnthropicAPI(string apiKey, string systemPrompt, string userPromp
     }
 
     json responseBody = check response.getJsonPayload();
-
-    // Accumulate token usage from the response
-    json|error usageJson = responseBody.usage;
-    if usageJson is json {
-        json|error inputJson = usageJson.input_tokens;
-        json|error outputJson = usageJson.output_tokens;
-        if inputJson is json {
-            int|error inputCount = int:fromString(inputJson.toString());
-            if inputCount is int {
-                totalInputTokens += inputCount;
-            }
-        }
-        if outputJson is json {
-            int|error outputCount = int:fromString(outputJson.toString());
-            if outputCount is int {
-                totalOutputTokens += outputCount;
-            }
-        }
-    }
-    totalCallCount += 1;
 
     // Walk content blocks from the end to return the last text block
     json|error contentArray = responseBody.content;

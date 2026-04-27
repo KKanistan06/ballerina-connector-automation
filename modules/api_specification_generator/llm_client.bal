@@ -16,8 +16,6 @@
 import ballerina/http;
 import ballerina/os;
 
-import wso2/connector_automation.utils;
-
 # Check whether the Anthropic API key is configured.
 #
 # + return - true if the ANTHROPIC_API_KEY env variable is set
@@ -100,23 +98,6 @@ function callAnthropicAPI(AnthropicConfig config, string systemPrompt, string us
     }
 
     json responseBody = check response.getJsonPayload();
-
-    json|error usageJson = responseBody.usage;
-    if usageJson is json {
-        int inputCount = 0;
-        int outputCount = 0;
-        json|error inputJson = usageJson.input_tokens;
-        json|error outputJson = usageJson.output_tokens;
-        if inputJson is json {
-            int|error parsed = int:fromString(inputJson.toString());
-            if parsed is int { inputCount = parsed; }
-        }
-        if outputJson is json {
-            int|error parsed = int:fromString(outputJson.toString());
-            if parsed is int { outputCount = parsed; }
-        }
-        utils:recordTokenUsage(inputCount, outputCount);
-    }
 
     // Check if the response was truncated due to token limits
     json|error stopReason = responseBody.stop_reason;
