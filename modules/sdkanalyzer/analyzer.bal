@@ -18,6 +18,7 @@ import ballerina/file;
 import ballerina/io;
 import ballerina/regex;
 import ballerina/time;
+import wso2/connector_automator.utils;
 
 # Main function that analyzes a Java SDK JAR file using JavaParser approach.
 #
@@ -27,6 +28,11 @@ import ballerina/time;
 # + return - Analysis result or error
 public function analyzeJavaSDK(string jarPath, string outputDir, AnalyzerConfig config)
         returns AnalysisResult|AnalyzerError {
+
+    error? aiInitErr = utils:initAIService(config.quietMode);
+    if aiInitErr is error {
+        return error AnalyzerError(aiInitErr.message(), aiInitErr);
+    }
 
     time:Utc startTime = time:utcNow();
     string[] warnings = [];

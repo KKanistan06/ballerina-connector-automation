@@ -1,4 +1,4 @@
-import wso2/connector_automation.sdkanalyzer as analyzer;
+import wso2/connector_automator.sdkanalyzer as analyzer;
 
 # Build connector `client.bal` from parsed API methods and method mappings.
 #

@@ -4,16 +4,16 @@ import ballerina/lang.regexp;
 import ballerina/os;
 import ballerina/regex;
 
-import wso2/connector_automation.api_specification_generator as generator;
-import wso2/connector_automation.client_generator as client_generator;
-import wso2/connector_automation.code_fixer as fixer;
-import wso2/connector_automation.connector_generator as connector;
-import wso2/connector_automation.document_generator as document_generator;
-import wso2/connector_automation.example_generator as example_generator;
-import wso2/connector_automation.sanitizor as sanitizor;
-import wso2/connector_automation.sdkanalyzer as analyzer;
-import wso2/connector_automation.test_generator as test_generator;
-import wso2/connector_automation.utils as oautils;
+import wso2/connector_automator.api_specification_generator as generator;
+import wso2/connector_automator.client_generator as client_generator;
+import wso2/connector_automator.code_fixer as fixer;
+import wso2/connector_automator.connector_generator as connector;
+import wso2/connector_automator.document_generator as document_generator;
+import wso2/connector_automator.example_generator as example_generator;
+import wso2/connector_automator.sanitizor as sanitizor;
+import wso2/connector_automator.sdkanalyzer as analyzer;
+import wso2/connector_automator.test_generator as test_generator;
+import wso2/connector_automator.utils as oautils;
 
 const string TEST_JARS_DIR = "test-jars";
 const string ANALYZER_OUTPUT_DIR = "modules/sdkanalyzer/output";

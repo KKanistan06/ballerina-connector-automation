@@ -46,22 +46,6 @@ public type GeneratorResult record {|
 # Error type for the API specification generator.
 public type GeneratorError error;
 
-# Configuration for Anthropic API calls.
-type AnthropicConfig record {
-    # Anthropic API key (from environment variable)
-    string apiKey;
-    # Anthropic model to use
-    string model;
-    # Maximum tokens for the response
-    int maxTokens;
-    # Temperature setting for response variability
-    decimal temperature;
-    # Whether to enable extended thinking for deeper reasoning
-    boolean enableExtendedThinking;
-    # Token budget for extended thinking (if enabled)
-    int thinkingBudgetTokens;
-};
-
 # Parameter / field kind in the IR.
 public enum FieldKind {
     REQUIRED = "Required",

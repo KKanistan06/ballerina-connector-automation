@@ -1,5 +1,5 @@
-import wso2/connector_automation.code_fixer;
-import wso2/connector_automation.utils;
+import wso2/connector_automator.code_fixer;
+import wso2/connector_automator.utils;
 
 import ballerina/io;
 import ballerina/lang.'string as strings;

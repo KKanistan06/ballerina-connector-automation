@@ -15,8 +15,8 @@
 
 import ballerina/io;
 import ballerina/log;
-import ballerina/os;
 import ballerina/regex;
+import wso2/connector_automator.utils;
 
 # Use Anthropic LLM to find root client class using weighted scoring
 #
@@ -27,7 +27,7 @@ import ballerina/regex;
 public function identifyClientClassWithLLM(ClassInfo[] classes, int maxCandidates, string? roleHint = ())
         returns [ClassInfo, LLMClientScore][]|AnalyzerError {
 
-    if !isAnthropicConfigured() {
+    if !utils:isAIServiceInitialized() {
         return error AnalyzerError("Anthropic LLM not configured: LLM-only candidate scoring required");
     }
 
@@ -109,7 +109,7 @@ public function detectClientInitPatternWithLLM(
         ClassInfo[] allClasses,
         string[] dependencyJarPaths
 ) returns ClientInitPattern|error {
-    if !isAnthropicConfigured() {
+    if !utils:isAIServiceInitialized() {
         return error("Anthropic LLM not configured: cannot detect init pattern using LLM");
     }
 
@@ -364,7 +364,7 @@ public function rankMethodsByUsageWithLLM(MethodInfo[] methods) returns MethodIn
     }
 
     // If more than 40 methods, use LLM to rank and extract top 40
-    if !isAnthropicConfigured() {
+    if !utils:isAIServiceInitialized() {
         return error("Anthropic LLM not configured: cannot rank methods using LLM");
     }
 
@@ -519,19 +519,17 @@ public function generateStructuredMetadata(
             }
         }
 
-        AnthropicConfiguration|error llmConfigResult = getAnthropicConfig();
-        if llmConfigResult is AnthropicConfiguration {
+        if utils:isAIServiceInitialized() {
             string sysPrompt = "You are an expert Java SDK analyzer. Based on your knowledge of SDK design patterns, " +
                 "identify which fields are REQUIRED for each parameter instance. " +
                 "Return ONLY valid JSON: {\"Method::ParamName\":[\"requiredField1\",\"requiredField2\"]}";
 
             string userPrompt = string `Identify REQUIRED fields for these method parameters:\n\n${batchPrompt}\n\nReturn JSON: {"Method::ParamName":["field1","field2"]}`;
 
-            json|error llmResponse = callAnthropicAPI(llmConfigResult, sysPrompt, userPrompt);
+            string|error llmResponseResult = utils:callAIAdvanced(userPrompt, sysPrompt, 5000);
 
-            if !(llmResponse is error) {
-                string responseText = extractResponseText(llmResponse);
-                string jsonText = responseText.trim();
+            if llmResponseResult is string {
+                string jsonText = llmResponseResult.trim();
 
                 // Extract JSON from markdown code blocks or find JSON object
                 int? jsonStartIdx = jsonText.indexOf("```json");
@@ -607,17 +605,16 @@ public function generateStructuredMetadata(
                 }
             }
         }
-        AnthropicConfiguration|error llmCfg2b = getAnthropicConfig();
-        if llmCfg2b is AnthropicConfiguration {
+        if utils:isAIServiceInitialized() {
             string sysPr2b = "You are an expert Java SDK analyzer. " +
                 "Identify which CONNECTION/CONFIGURATION fields are REQUIRED for a basic connection. " +
                 "Return ONLY valid JSON array of required field names: [\"field1\",\"field2\",\"field.member\"]";
             string usrPr2b = string `For the client type '${initPattern.builderClass ?: "unknown"}',` +
                 string ` identify which of these connection configuration fields are REQUIRED. ` +
                 string `For member-reference entries, use dotted names like field.memberField:\n\n${connFieldList}\nReturn JSON array.`;
-            json|error llmResp2b = callAnthropicAPI(llmCfg2b, sysPr2b, usrPr2b);
-            if llmResp2b is json {
-                string respTxt2b = extractResponseText(llmResp2b);
+            string|error llmResp2bResult = utils:callAIAdvanced(usrPr2b, sysPr2b, 5000);
+            if llmResp2bResult is string {
+                string respTxt2b = llmResp2bResult;
                 string jTxt2b = respTxt2b.trim();
                 int? arrStart = jTxt2b.indexOf("[");
                 int? arrEnd = jTxt2b.lastIndexOf("]");
@@ -1433,27 +1430,6 @@ function isHelperLikeClientType(string simpleNameLower) returns boolean {
     return false;
 }
 
-# Check if Anthropic LLM is properly configured
-#
-# + return - True if configured
-function isAnthropicConfigured() returns boolean {
-    // Check environment variable first
-    string? apiKey = os:getEnv("ANTHROPIC_API_KEY");
-    if apiKey is string {
-        if apiKey.trim().length() > 0 {
-            return true;
-        }
-    }
-
-    // If getAnthropicConfig returns a config, then Anthropic is configured.
-    AnthropicConfiguration|error conf = getAnthropicConfig();
-    if conf is AnthropicConfiguration {
-        return true;
-    }
-
-    return false;
-}
-
 # Use LLM to detect client initialization pattern and generate example code.
 #
 # + rootClient - The identified root client class  
@@ -1465,7 +1441,7 @@ function detectInitPatternWithLLM(
         ClassInfo[] allClasses,
         string[] dependencyJarPaths
 ) returns ClientInitPattern|error {
-    if isAnthropicConfigured() {
+    if utils:isAIServiceInitialized() {
         string systemPrompt = getInitPatternSystemPrompt();
         string constructorDetails = formatConstructorDetails(rootClient.constructors);
         string staticMethodInfo = formatStaticMethods(rootClient.methods);
@@ -1478,10 +1454,10 @@ function detectInitPatternWithLLM(
                 rootClient.isInterface
         );
 
-        json|error response = callAnthropicAPI(check getAnthropicConfig(), systemPrompt, userPrompt);
+        string|error responseResult = utils:callAIAdvanced(userPrompt, systemPrompt, 5000);
 
-        if response is json {
-            string responseText = extractResponseText(response);
+        if responseResult is string {
+            string responseText = responseResult;
             string[] lines = regex:split(responseText, "\n");
             string patternName = "";
             string reason = "";
@@ -1519,8 +1495,7 @@ function detectInitPatternWithLLM(
                 return llmPattern;
             }
         } else {
-            error err = <error>response;
-            io:println(string `LLM init pattern detection failed: ${err.message()}`);
+            io:println(string `LLM init pattern detection failed: ${responseResult.message()}`);
         }
     }
 
@@ -1549,13 +1524,10 @@ function rankMethodsUsingLLM(MethodInfo[] methods) returns MethodInfo[]|error {
     string methodsList = formatMethodsListForRanking(methods);
     string userPrompt = getMethodRankingUserPrompt(methods.length(), methodsList);
 
-    json|error response = callAnthropicAPI(check getAnthropicConfig(), systemPrompt, userPrompt);
+    string|error responseResult = utils:callAIAdvanced(userPrompt, systemPrompt, 5000);
 
-    if response is json {
-        string responseText = extractResponseText(response);
-        if responseText == "" {
-            responseText = response.toString();
-        }
+    if responseResult is string {
+        string responseText = responseResult;
 
         // Parse the comma-separated method names
         string[] rankedNames = regex:split(responseText, ",");
@@ -1616,7 +1588,7 @@ function addMethodDescriptions(MethodInfo[] methods) returns MethodInfo[]|error 
     }
 
     // If LLM not configured, return methods as-is
-    if !isAnthropicConfigured() {
+    if !utils:isAIServiceInitialized() {
         return methods;
     }
 
@@ -1643,10 +1615,10 @@ function addMethodDescriptions(MethodInfo[] methods) returns MethodInfo[]|error 
     string userPrompt = "Provide one-line descriptions for these methods:\n\n" + methodList +
         "\nDescriptions (one per line, in same order):";
 
-    json|error response = callAnthropicAPI(check getAnthropicConfig(), systemPrompt, userPrompt);
+    string|error responseResult = utils:callAIAdvanced(userPrompt, systemPrompt, 5000);
 
-    if response is json {
-        string responseText = extractResponseText(response).trim();
+    if responseResult is string {
+        string responseText = responseResult.trim();
         if responseText != "" {
             string[] descriptions = regex:split(responseText, "\n");
             descriptions = descriptions.map(d => d.trim()).filter(d => d.length() > 0);
@@ -1681,7 +1653,7 @@ function selectTopNMethodsWithLLM(MethodInfo[] methods, int n) returns MethodInf
         return methods;
     }
 
-    if !isAnthropicConfigured() {
+    if !utils:isAIServiceInitialized() {
         return error("Anthropic LLM not configured: cannot select top-N methods");
     }
 
@@ -1689,12 +1661,9 @@ function selectTopNMethodsWithLLM(MethodInfo[] methods, int n) returns MethodInf
     string methodsList = formatMethodsListForRanking(methods);
     string userPrompt = getMethodSelectionUserPrompt(methods.length(), methodsList, n);
 
-    json|error response = callAnthropicAPI(check getAnthropicConfig(), systemPrompt, userPrompt);
-    if response is json {
-        string responseText = extractResponseText(response).trim();
-        if responseText == "" {
-            responseText = response.toString();
-        }
+    string|error responseResult = utils:callAIAdvanced(userPrompt, systemPrompt, 5000);
+    if responseResult is string {
+        string responseText = responseResult.trim();
 
         // Parse comma-separated method names
         string[] parts = regex:split(responseText, ",");
@@ -1862,21 +1831,18 @@ public function analyzeFieldRequirements(
         fieldsList += string `- ${fld.name}: ${fld.typeName}\n`;
     }
 
-    // Get LLM config
-    AnthropicConfiguration llmConfig = check getAnthropicConfig();
-
     // Call LLM
     string sysPrompt = getFieldRequirementSystemPrompt();
     string userPrompt = getFieldRequirementUserPrompt(methodName, parameterType, fieldsList);
-    json|error llmResponse = callAnthropicAPI(llmConfig, sysPrompt, userPrompt);
+    string|error llmResult = utils:callAIAdvanced(userPrompt, sysPrompt, 5000);
 
-    if llmResponse is error {
+    if llmResult is error {
         // If LLM fails, return original fields
         return fields;
     }
 
     // Parse LLM response
-    string responseText = extractResponseText(llmResponse);
+    string responseText = llmResult;
 
     // Extract JSON array from response (handle markdown code blocks)
     string jsonText = responseText.trim();

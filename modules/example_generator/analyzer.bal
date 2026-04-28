@@ -1,4 +1,4 @@
-import wso2/connector_automation.code_fixer;
+import wso2/connector_automator.code_fixer;
 
 import ballerina/file;
 import ballerina/io;
@@ -170,10 +170,6 @@ public function writeExampleToFile(string connectorPath, string exampleName, str
 
     // Create example directory
     check file:createDir(exampleDir, file:RECURSIVE);
-
-    // // Create .github directory
-    // string githubDir = exampleDir + "/.github";
-    // check file:createDir(githubDir, file:RECURSIVE);
 
     // Write main.bal file
     string mainBalPath = exampleDir + "/main.bal";

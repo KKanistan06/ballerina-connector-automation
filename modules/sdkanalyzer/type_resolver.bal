@@ -14,6 +14,7 @@
 // under the License.
 
 import ballerina/regex;
+import wso2/connector_automator.utils;
 
 # Resolve an underlying Request/Response ClassInfo from a parameter
 #
@@ -668,7 +669,7 @@ public function addRequestFieldDescriptions(RequestFieldInfo[] fields) returns R
         return fields;
     }
 
-    if !isAnthropicConfigured() {
+    if !utils:isAIServiceInitialized() {
         return fields;
     }
 
@@ -686,10 +687,10 @@ public function addRequestFieldDescriptions(RequestFieldInfo[] fields) returns R
     string userPrompt = string `Provide one-line descriptions for these request fields:\n\n" + fieldList
         "\nDescriptions (one per line, in same order):`;
 
-    json|error response = callAnthropicAPI(check getAnthropicConfig(), systemPrompt, userPrompt);
+    string|error responseResult = utils:callAIAdvanced(userPrompt, systemPrompt, 5000);
 
-    if response is json {
-        string responseText = extractResponseText(response).trim();
+    if responseResult is string {
+        string responseText = responseResult.trim();
         if responseText != "" {
             string[] descriptions = regex:split(responseText, "\n");
             descriptions = descriptions.map(d => d.trim()).filter(d => d.length() > 0);

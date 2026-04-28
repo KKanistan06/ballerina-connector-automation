@@ -15,6 +15,7 @@
 // under the License.
 
 import ballerina/regex;
+import wso2/connector_automator.utils;
 
 # Calculate LLM-based client score for a class using LLM's own knowledge.
 #
@@ -23,7 +24,7 @@ import ballerina/regex;
 # + roleHint - Optional target role hint (admin/producer/consumer)
 # + return - LLM client score based on LLM analysis
 public function calculateLLMClientScore(ClassInfo cls, ClassInfo[] allClasses, string? roleHint = ()) returns LLMClientScore|error {
-    if !isAnthropicConfigured() {
+    if !utils:isAIServiceInitialized() {
         return error("Anthropic LLM not configured: LLM-only scoring required");
     }
 
@@ -46,34 +47,11 @@ function callLLMForClientScoring(ClassInfo cls, ClassInfo[] allClasses, string? 
     string classInfo = formatClassInfoForLLM(cls);
     string userPrompt = getClientScoringUserPrompt(classInfo, roleHint);
 
-    json|error response = callAnthropicAPI(check getAnthropicConfig(), systemPrompt, userPrompt);
-
-    if response is error {
-        return response;
+    string|error responseResult = utils:callAIAdvanced(userPrompt, systemPrompt, 5000);
+    if responseResult is error {
+        return responseResult;
     }
-
-    // Extract text from Anthropic API response structure: response.content[0].text
-    string responseText = "";
-
-    // response.content is a json array of content blocks
-    json|error contentArray = response.content;
-    if contentArray is json && contentArray is json[] {
-        json[] contentList = <json[]>contentArray;
-        if contentList.length() > 0 {
-            json firstContent = contentList[0];
-            // Access text field from the first content block
-            json|error textField = firstContent.text;
-            if textField is json && textField is string {
-                responseText = textField.toString();
-            } else if textField is json {
-                responseText = textField.toString();
-            }
-        }
-    }
-
-    if responseText == "" {
-        responseText = response.toString();
-    }
+    string responseText = responseResult;
 
     string[] matches = regex:split(responseText, "\\|");
     if matches.length() > 0 {

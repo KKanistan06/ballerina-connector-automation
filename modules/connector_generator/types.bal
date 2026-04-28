@@ -1,5 +1,5 @@
-import wso2/connector_automation.sdkanalyzer as analyzer;
-import wso2/connector_automation.api_specification_generator as api;
+import wso2/connector_automator.sdkanalyzer as analyzer;
+import wso2/connector_automator.api_specification_generator as api;
 
 # Configuration for connector generation.
 public type ConnectorGeneratorConfig record {|
@@ -27,22 +27,6 @@ public type ConnectorGeneratorConfig record {|
     int maxFixIterations = 3;
     # SDK version hint extracted from dataset key (e.g., sqs-2.31.66 -> 2.31.66)
     string sdkVersionHint = "";
-|};
-
-# Configuration for Anthropic API calls.
-public type AnthropicConfig record {|
-    # Anthropic API key from environment variable
-    string apiKey;
-    # Anthropic model identifier
-    string model;
-    # Maximum output tokens
-    int maxTokens;
-    # Sampling temperature
-    decimal temperature;
-    # Enable extended thinking mode
-    boolean enableExtendedThinking;
-    # Token budget for extended thinking
-    int thinkingBudgetTokens;
 |};
 
 # Parsed method parameter from API spec signature.

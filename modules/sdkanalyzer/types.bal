@@ -312,20 +312,6 @@ public type ConstructorMetadata record {|
     boolean isDeprecated;
 |};
 
-# Configuration for Anthropic API calls
-type AnthropicConfiguration record {
-    # API key for authentication
-    string apiKey;
-    # Model to use for analysis
-    string model;
-    # Maximum number of tokens for the API call
-    int maxTokens;
-    # Temperature for response generation
-    decimal temperature;
-    # Enable extended thinking (deep research mode) for complex analysis
-    boolean enableExtendedThinking;
-};
-
 # Type hierarchy information.
 public type TypeHierarchy record {|
     # Map of class name to its superclass

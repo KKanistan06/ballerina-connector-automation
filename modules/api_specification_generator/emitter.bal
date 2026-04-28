@@ -15,7 +15,7 @@
 
 import ballerina/file;
 import ballerina/io;
-import ballerina/os;
+import wso2/connector_automator.utils;
 
 # Write the Ballerina specification source to a .bal file.
 #
@@ -91,9 +91,9 @@ function resolveIrOutputDir(string outputDir) returns string {
 # + filePath - Path to the .bal file to format
 # + return - Error if formatting fails (non-fatal)
 public function runBalFormat(string filePath) returns error? {
-    os:Process process = check os:exec({value: "bal", arguments: ["format", filePath]});
-    int exitCode = check process.waitForExit();
-    if exitCode != 0 {
-        io:println(string `Warning: bal format exited with code ${exitCode} for ${filePath}`);
+    utils:CommandResult result = utils:executeCommand(string `bal format ${filePath}`,
+            utils:getDirectoryPath(filePath), true);
+    if !result.success {
+        io:println(string `Warning: bal format exited with code ${result.exitCode} for ${filePath}`);
     }
 }

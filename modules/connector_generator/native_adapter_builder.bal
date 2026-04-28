@@ -1,4 +1,4 @@
-import wso2/connector_automation.sdkanalyzer as analyzer;
+import wso2/connector_automator.sdkanalyzer as analyzer;
 
 # Build Java native adaptor source from method mappings.
 #

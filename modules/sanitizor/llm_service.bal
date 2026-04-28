@@ -1,4 +1,4 @@
-import wso2/connector_automation.utils;
+import wso2/connector_automator.utils;
 
 public function initLLMService(boolean quietMode = false) returns LLMServiceError? {
     error? result = utils:initAIService(quietMode);

@@ -15,6 +15,7 @@
 
 import ballerina/io;
 import ballerina/time;
+import wso2/connector_automator.utils;
 
 # Generate a Ballerina API Specification from raw sdk_analyzer metadata.
 # This is the primary entry point for the module.
@@ -26,8 +27,9 @@ public function generateSpecification(GeneratorConfig config) returns GeneratorR
 
     printGeneratorPlan(config);
 
-    // Step 1: Verify Anthropic API key
-    if !isAnthropicConfigured() {
+    // Step 1: Initialize AI service (validates ANTHROPIC_API_KEY)
+    error? aiInit = utils:initAIService(config.quietMode);
+    if aiInit is error {
         return error GeneratorError("ANTHROPIC_API_KEY environment variable not set. " +
                                     "LLM is required for IR generation.");
     }

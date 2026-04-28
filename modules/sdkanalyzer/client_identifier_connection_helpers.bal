@@ -16,6 +16,7 @@
 import ballerina/io;
 import ballerina/log;
 import ballerina/os;
+import wso2/connector_automator.utils;
 
 # Check if a type name is a primitive or standard Java type
 #
@@ -286,7 +287,7 @@ function enrichConnectionFieldsWithLLM(
         return [fields, syntheticMeta];
     }
 
-    if !isAnthropicConfigured() {
+    if !utils:isAIServiceInitialized() {
         printConnectionEnrichLog("LLM not configured — skipping enrichment");
         return [fields, syntheticMeta];
     }
@@ -311,25 +312,18 @@ function enrichConnectionFieldsWithLLM(
         return [fields, syntheticMeta];
     }
 
-    AnthropicConfiguration|error llmConfigResult = getAnthropicConfig();
-    if llmConfigResult is error {
-        printConnectionEnrichLog(string `Cannot get LLM config: ${llmConfigResult.message()}`);
-        return [fields, syntheticMeta];
-    }
-    AnthropicConfiguration llmConfig = llmConfigResult;
-
     string systemPrompt = getConnectionFieldEnrichmentSystemPrompt();
     string userPrompt = getConnectionFieldEnrichmentUserPrompt(sdkPackage, clientSimpleName, llmCandidates);
 
     printConnectionEnrichLog(string `Enriching ${llmCandidates.length()} unresolved connection fields via LLM...`);
 
-    json|error response = callAnthropicAPI(llmConfig, systemPrompt, userPrompt);
-    if response is error {
-        printConnectionEnrichLog(string `LLM call failed: ${response.message()} — using raw fields`);
+    string|error responseResult = utils:callAIAdvanced(userPrompt, systemPrompt, 5000);
+    if responseResult is error {
+        printConnectionEnrichLog(string `LLM call failed: ${responseResult.message()} — using raw fields`);
         return [fields, syntheticMeta];
     }
 
-    string responseText = extractResponseText(response).trim();
+    string responseText = responseResult.trim();
     if responseText.length() == 0 {
         printConnectionEnrichLog("Empty LLM response — using raw fields");
         return [fields, syntheticMeta];

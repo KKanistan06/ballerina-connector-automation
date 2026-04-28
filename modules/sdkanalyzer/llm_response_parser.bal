@@ -15,33 +15,6 @@
 
 import ballerina/regex;
 
-# Extract text response from nested Anthropic API response structure
-#
-# + response - JSON response from Anthropic API
-# + return - Extracted text content
-public function extractResponseText(json response) returns string {
-    string responseText = "";
-
-    json|error contentArray = response.content;
-    if contentArray is json && contentArray is json[] {
-        json[] contentList = <json[]>contentArray;
-        if contentList.length() > 0 {
-            json firstContent = contentList[0];
-            json|error textField = firstContent.text;
-            if textField is json {
-                responseText = textField.toString();
-                if responseText.startsWith("\"") && responseText.endsWith("\"") {
-                    responseText = responseText.substring(1, responseText.length() - 1);
-                }
-                return responseText;
-            }
-        }
-    }
-
-    responseText = response.toString();
-    return responseText;
-}
-
 # Extract numeric value from LLM response text
 #
 # + responseText - Response text from LLM

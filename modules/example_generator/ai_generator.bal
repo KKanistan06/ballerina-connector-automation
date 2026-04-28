@@ -1,4 +1,4 @@
-import wso2/connector_automation.utils;
+import wso2/connector_automator.utils;
 
 public function initExampleGenerator() returns error? {
     return utils:initAIService();

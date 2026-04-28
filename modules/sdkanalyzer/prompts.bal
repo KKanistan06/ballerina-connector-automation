@@ -367,7 +367,7 @@ public function getConnectionFieldEnrichmentSystemPrompt() returns string {
 # + sdkPackage - Root package of the SDK (e.g. software.amazon.awssdk.services.sqs)
 # + clientSimpleName - Simple name of the root client class (e.g. SqsClient)
 # + fields - All connection fields collected by collectBuilderSetters
-# + return - User prompt ready for callAnthropicAPI
+# + return - User prompt for the LLM API call
 public function getConnectionFieldEnrichmentUserPrompt(
         string sdkPackage,
         string clientSimpleName,

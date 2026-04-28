@@ -15,6 +15,7 @@
 
 import ballerina/io;
 import ballerina/regex;
+import wso2/connector_automator.utils;
 
 # Generate an IntermediateRepresentation by sending the raw metadata JSON
 # to the LLM and parsing its structured IR JSON response.
@@ -28,13 +29,6 @@ public function generateIRFromMetadata(string metadataPath, GeneratorConfig conf
     // Read raw metadata JSON text
     string metadataJson = check io:fileReadString(metadataPath);
 
-    // Retrieve Anthropic configuration
-    AnthropicConfig anthropicCfg = check getAnthropicConfig(
-            config.maxTokens,
-            config.enableExtendedThinking,
-            config.thinkingBudgetTokens
-    );
-
     // Filter enum-typed entries from memberClasses before sending to the LLM.
     string metadataForLLM = metadataJson;
     string|error filteredMeta = filterEnumClassesFromMemberClasses(metadataJson);
@@ -45,12 +39,12 @@ public function generateIRFromMetadata(string metadataPath, GeneratorConfig conf
     string systemPrompt = getIRGenerationSystemPrompt();
     string userPrompt = getIRGenerationUserPrompt(metadataForLLM);
 
-    // Call LLM
-    json llmResponse = check callAnthropicAPI(anthropicCfg, systemPrompt, userPrompt);
-    string responseText = extractResponseText(llmResponse);
+    // Call LLM via shared utils service
+    string responseText = check utils:callAIAdvanced(userPrompt, systemPrompt, config.maxTokens,
+            config.enableExtendedThinking, config.thinkingBudgetTokens);
 
     // Extract JSON from response text
-    string irJsonStr = check extractJsonFromResponse(responseText);
+    string irJsonStr = check utils:extractJsonFromLLMResponse(responseText);
 
     // Validate JSON is complete before parsing
     if !isCompleteJson(irJsonStr) {
@@ -298,7 +292,7 @@ function ensureIRCompleteness(IntermediateRepresentation ir) returns Intermediat
         } else {
             extraStructures.push({name: typeName, kind: "STRUCTURE", fields: []});
         }
-        defined[typeName] = true; // prevent duplicates
+        defined[typeName] = true;
     }
 
     if extraStructures.length() == 0 && extraEnums.length() == 0 {
@@ -318,50 +312,6 @@ function ensureIRCompleteness(IntermediateRepresentation ir) returns Intermediat
         enums: allEnums,
         collections: ir.collections
     };
-}
-
-# Extract a JSON object string from LLM response text.
-#
-# + responseText - Full text response from the LLM
-# + return - JSON object string or error
-function extractJsonFromResponse(string responseText) returns string|error {
-    if responseText.includes("```json") {
-        string[] parts = regex:split(responseText, "```json");
-        if parts.length() >= 2 {
-            string block = parts[1];
-            int? closingIdx = block.indexOf("```");
-            if closingIdx is int && closingIdx > 0 {
-                return block.substring(0, closingIdx).trim();
-            }
-            return block.trim();
-        }
-    }
-
-    if responseText.includes("```") {
-        string[] parts = regex:split(responseText, "```");
-        if parts.length() >= 3 {
-            string block = parts[1].trim();
-            // Strip optional language tag on first line
-            int? newline = block.indexOf("\n");
-            if newline is int && newline < 10 {
-                string tag = block.substring(0, newline).trim();
-                if tag == "json" || tag == "" {
-                    block = block.substring(newline + 1);
-                }
-            }
-            return block.trim();
-        }
-    }
-
-    // Try raw JSON – locate the outermost { ... } object
-    int? startIdx = responseText.indexOf("{");
-    int? endIdx = responseText.lastIndexOf("}");
-    if startIdx is int && endIdx is int && endIdx > startIdx {
-        return responseText.substring(startIdx, endIdx + 1).trim();
-    }
-
-    return error("Could not extract JSON from LLM response. " +
-                "Expected a raw JSON object or a ```json fenced block.");
 }
 
 # Check if a JSON string is syntactically complete (balanced braces/brackets).
@@ -426,8 +376,8 @@ function deriveMemberName(string rawValue) returns string {
         return "UNKNOWN";
     }
 
-    // Phase 1: insert an underscore before each uppercase letter that directly follows
-    // a lowercase letter or a digit (CamelCase decomposition).
+    // Insert an underscore before each uppercase letter that directly follows
+    // a lowercase letter or a digit.
     string phased = "";
     int idx = 0;
     while idx < v.length() {
@@ -445,7 +395,7 @@ function deriveMemberName(string rawValue) returns string {
         idx += 1;
     }
 
-    // Phase 2: replace every non-alphanumeric character with an underscore.
+    // Replace every non-alphanumeric character with an underscore.
     string replaced = "";
     int idx2 = 0;
     while idx2 < phased.length() {
@@ -458,13 +408,13 @@ function deriveMemberName(string rawValue) returns string {
         idx2 += 1;
     }
 
-    // Phase 3: uppercase everything.
+    // Uppercase everything.
     string upper = replaced.toUpperAscii();
 
-    // Phase 4: collapse consecutive underscores.
+    // Collapse consecutive underscores.
     upper = regex:replaceAll(upper, "_+", "_");
 
-    // Phase 5: trim leading and trailing underscores.
+    // Trim leading and trailing underscores.
     int trimStart = 0;
     while trimStart < upper.length() && upper.substring(trimStart, trimStart + 1) == "_" {
         trimStart += 1;
@@ -685,9 +635,7 @@ function mapJavaTypeToBallerinaType(string javaType) returns string {
     }
 }
 
-# Map a single raw field JSON object (from a metadata memberClasses[].fields entry)
-# to an IRField, resolving the Ballerina type using enumReference / memberReference /
-# typeName in that priority order.
+# Map a single raw field JSON object to an IRField
 #
 # + fieldJson - Raw field JSON from metadata memberClasses entry
 # + enumSimpleNames - Set of simple names of known enum types for type resolution
@@ -698,13 +646,13 @@ function mapJsonFieldToIRField(json fieldJson, map<boolean> enumSimpleNames) ret
 
     string balType;
 
-    // Priority 1: field is directly typed as an enum.
+    // Field is directly typed as an enum.
     json|error enumRefResult = fieldJson.enumReference;
     if enumRefResult is string && enumRefResult.trim().length() > 0 {
         string[] parts = regex:split(enumRefResult, "\\.");
         balType = canonicalizeTypeName(parts[parts.length() - 1]);
     } else {
-        // Priority 2: interface field with concrete implementations — emit a union type.
+        // Interface field with concrete implementations — emit a union type.
         json|error ifaceImplsResult = fieldJson.interfaceImplementations;
         json[]|error ifaceImplsArr = ifaceImplsResult is json[] ? ifaceImplsResult : error("not array");
         if ifaceImplsArr is json[] && ifaceImplsArr.length() > 0 {
@@ -719,7 +667,7 @@ function mapJsonFieldToIRField(json fieldJson, map<boolean> enumSimpleNames) ret
                 ? string:'join("|", ...implSimpleNames)
                 : "anydata";
         } else {
-            // Priority 3: field is a collection whose element is a member-class type.
+            // Field is a collection whose element is a member-class type.
             json|error memberRefResult = fieldJson.memberReference;
             if memberRefResult is string && memberRefResult.trim().length() > 0 {
                 string[] parts = regex:split(memberRefResult, "\\.");
@@ -739,7 +687,7 @@ function mapJsonFieldToIRField(json fieldJson, map<boolean> enumSimpleNames) ret
                     balType = memberSimpleName;
                 }
             } else {
-                // Priority 4: plain scalar field — map using standard Java → Ballerina rules.
+                // Plain scalar field — map using standard Java to Ballerina rules.
                 string typeName = "";
                 json|error tnResult = fieldJson.typeName;
                 if tnResult is string {

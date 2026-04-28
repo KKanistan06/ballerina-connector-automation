@@ -177,21 +177,6 @@ function parseCommandLineArgs(string[] args) returns AnalyzerConfig {
     return config;
 }
 
-# Create separator line.
-#
-# + char - Character to repeat
-# + length - Length of separator
-# + return - Separator string
-function createSeparator(string char, int length) returns string {
-    string[] chars = [];
-    int i = 0;
-    while i < length {
-        chars.push(char);
-        i = i + 1;
-    }
-    return string:'join("", ...chars);
-}
-
 # Print usage information.
 function printUsage() {
     io:println();

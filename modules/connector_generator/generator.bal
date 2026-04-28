@@ -2,9 +2,10 @@ import ballerina/io;
 import ballerina/regex;
 import ballerina/time;
 
-import wso2/connector_automation.api_specification_generator as api;
-import wso2/connector_automation.code_fixer as fixer;
-import wso2/connector_automation.sdkanalyzer as analyzer;
+import wso2/connector_automator.api_specification_generator as api;
+import wso2/connector_automator.utils;
+import wso2/connector_automator.code_fixer as fixer;
+import wso2/connector_automator.sdkanalyzer as analyzer;
 
 # Generate connector artifacts from metadata JSON, IR JSON, and API spec.
 #
@@ -16,7 +17,8 @@ public function generateConnector(ConnectorGeneratorConfig config)
 
     printConnectorPlan(config);
 
-    if !isAnthropicConfigured() {
+    error? aiInit = utils:initAIService(config.quietMode);
+    if aiInit is error {
         return error ConnectorGeneratorError("ANTHROPIC_API_KEY environment variable not set. " +
             "LLM is mandatory for connector generation.");
     }
@@ -286,12 +288,6 @@ function loadInputs(ConnectorGeneratorConfig config) returns ConnectorGeneration
 
 function generateConnectorBundleViaLLM(ConnectorGenerationInputs loaded,
         ConnectorGeneratorConfig config) returns GeneratedConnectorBundle|error {
-    AnthropicConfig anthropicConfig = check getAnthropicConfig(
-            config.maxTokens,
-            config.enableExtendedThinking,
-            config.thinkingBudgetTokens
-    );
-
     string systemPrompt = getConnectorGenerationSystemPrompt();
     string userPrompt = getConnectorGenerationUserPrompt(
             loaded.metadataJsonText,
@@ -300,9 +296,9 @@ function generateConnectorBundleViaLLM(ConnectorGenerationInputs loaded,
             config.sdkVersionHint
     );
 
-    json llmResponse = check callAnthropicAPI(anthropicConfig, systemPrompt, userPrompt);
-    string responseText = extractResponseText(llmResponse);
-    string bundleJsonText = check extractJsonFromResponse(responseText);
+    string responseText = check utils:callAIAdvanced(userPrompt, systemPrompt, config.maxTokens,
+            config.enableExtendedThinking, config.thinkingBudgetTokens);
+    string bundleJsonText = check utils:extractJsonFromLLMResponse(responseText);
 
     json|error parsed = bundleJsonText.fromJsonString();
     if parsed is error {

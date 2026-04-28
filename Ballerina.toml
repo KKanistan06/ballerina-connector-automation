@@ -1,10 +1,15 @@
 [package]
 org = "wso2"
-name = "connector_automation"
+name = "connector_automator"
 version = "0.1.0"
 distribution = "2201.13.1"
 
+[build-options]
+observabilityIncluded = true
+
 [dependencies]
+"ballerina/ai" = "1.11.2"
+"ballerinax/ai.anthropic" = "1.3.3"
 "ballerina/http" = "2.15.4"
 "ballerina/log" = "2.17.0"
 "ballerina/regex" = "1.4.1"
